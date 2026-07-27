@@ -7,6 +7,7 @@ RUN go mod download
 
 COPY cmd ./cmd
 RUN mkdir -p /out \
+  && go build -o /out/jangolova ./cmd/jangolova \
   && go build -o /out/xpost ./cmd/xpost \
   && go build -o /out/xpost-playwright ./cmd/xpost-playwright \
   && go build -o /out/playwright-install ./cmd/playwright-install
@@ -33,6 +34,8 @@ RUN npm ci --omit=dev
 COPY scripts ./scripts
 COPY tests ./tests
 COPY README.md ./
+COPY examples ./examples
+COPY --from=builder /out/jangolova /app/bin/jangolova
 COPY --from=builder /out/xpost /app/bin/xpost
 COPY --from=builder /out/xpost-playwright /app/bin/xpost-playwright
 COPY --from=builder /out/playwright-install /app/bin/playwright-install

@@ -18,15 +18,17 @@ Status: complete.
 
 Status: in progress.
 
-- Define the versioned session manifest.
-- Validate names, adapter references, and cross-resource references.
-- Define engine, surface, controller, and connector contracts.
-- Implement ordered startup and reverse-order rollback.
-- Add `jangolova validate` and adapter discovery commands.
+- [x] Define the versioned session manifest.
+- [x] Validate names and cross-resource references.
+- [x] Define engine, surface, controller, and connector contracts.
+- [x] Implement adapter preflight, ordered startup, and reverse-order rollback.
+- [x] Add `jangolova validate`.
+- [ ] Add adapter discovery commands.
 - Keep the foundation free of concrete engine dependencies.
 
 Exit criterion: a test session using fake adapters proves startup, readiness,
-stop, and rollback behavior.
+stop, and rollback behavior. Startup, stop, and rollback are covered; explicit
+readiness and health reporting remain.
 
 ## Phase 2: Extract the browser vertical slice
 

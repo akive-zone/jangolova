@@ -43,3 +43,13 @@ For VPS setup, persistent login, and individual controller modes, see the
 
 Jangolova is in its foundation phase. Public APIs and manifests are expected to
 change until the first end-to-end generalized session is running.
+
+The first `v1alpha1` session manifest and lifecycle contracts are available.
+Validate the example manifest with:
+
+```bash
+go run ./cmd/jangolova validate --file examples/browser-session.json
+```
+
+This validates configuration and references only. Concrete adapters will be
+connected to the orchestrator during the browser vertical-slice extraction.
