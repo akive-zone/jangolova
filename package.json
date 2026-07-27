@@ -1,0 +1,15 @@
+{
+  "name": "jangolova-xpost",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "xpost:puppeteer": "node scripts/xpost-puppeteer.mjs"
+  },
+  "dependencies": {
+    "puppeteer-core": "25.4.0"
+  }
+}

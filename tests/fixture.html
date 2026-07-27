@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Xpost CDP Fixture</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 40px;
+        max-width: 720px;
+      }
+
+      [role="textbox"] {
+        border: 1px solid #888;
+        min-height: 120px;
+        padding: 12px;
+      }
+
+      button {
+        margin-top: 16px;
+        padding: 10px 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Composer Fixture</h1>
+      <div data-testid="tweetTextarea_0" role="textbox" contenteditable="true"></div>
+      <button data-testid="tweetButton" onclick="window.__posted = true">Post</button>
+    </main>
+  </body>
+</html>

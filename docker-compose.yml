@@ -1,0 +1,16 @@
+services:
+  xpost:
+    build: .
+    ports:
+      - "127.0.0.1:9222:9222"
+      - "127.0.0.1:5999:5999"
+    volumes:
+      - xpost-profile:/data/chromium-profile
+    shm_size: "1gb"
+    environment:
+      CDP_HOST: 0.0.0.0
+      CHROMIUM_CLEAR_STALE_LOCKS: "1"
+      VNC_LOCALHOST: "0"
+
+volumes:
+  xpost-profile:
