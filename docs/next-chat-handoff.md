@@ -30,11 +30,18 @@ The adapter is registered as `web-presentation` and is discoverable through
 Validation already run:
 
 ```bash
-GOCACHE=/tmp/jangolova-go-build-cache \
-GOMODCACHE=/tmp/jangolova-go-mod-cache go test -race ./...
+GOCACHE=/tmp/jangolova-go-build-cache go test -race ./...
 npm run test:browser-worker
-node --test tests/presentation-worker-contract-test.mjs
+npm run test:presentation-worker
+docker compose -f tests/docker/compose.yaml run --rm \
+  --entrypoint tests/docker/web-presentation-smoke-test.sh engine-test
 ```
+
+The live Chromium smoke test writes authored HTML/CSS/JavaScript, verifies the
+resulting DOM and cursor event, validates a captured PNG, disconnects the
+provider, and proves that the caller-owned Chromium and presentation server
+remain alive. Connected capability discovery also retains the provider's
+common `describe`, `act`, and `events` methods alongside page-declared actions.
 
 ## Important boundary
 
@@ -52,15 +59,7 @@ the caller-owned runtime.
 
 ## What is still missing
 
-### 1. Prove the authored path against a real browser
-
-Add a live smoke test that starts a test-owned Chromium, serves
-`examples/web-presentation`, connects `web-presentation`, calls
-`presentation.write`, verifies the resulting DOM and event, captures a PNG,
-then disconnects and verifies Chromium is still alive. Keep this under test
-fixtures; do not move browser launch back into the adapter.
-
-### 2. Decide the presentation artifact model
+### 1. Decide the presentation artifact model
 
 The current `presentation.write` accepts arbitrary source strings. Decide and
 document whether production callers will use:
@@ -73,7 +72,7 @@ document whether production callers will use:
 Then add size limits, source origin policy, asset loading rules, and version or
 revision identifiers.
 
-### 3. Harden JavaScript execution
+### 2. Harden JavaScript execution
 
 `presentation.execute` intentionally runs code inside the target page and is
 marked externally effectful. Add provider policy hooks, audit records,
@@ -81,7 +80,7 @@ timeouts, cancellation behavior, and a clear distinction between trusted
 presentation code and untrusted agent-authored code. Avoid silently treating
 arbitrary JavaScript as a safe semantic action.
 
-### 4. Improve document semantics
+### 3. Improve document semantics
 
 The reference renderer is deliberately small. Define a stable document schema
 for layout, text, media, controls, and accessible names. Add validation and
@@ -89,7 +88,7 @@ revision-aware patching so concurrent agents cannot overwrite each other's
 changes. Add richer `describe` output containing semantic nodes and action
 schemas.
 
-### 5. Connect Three.js as a first-class presentation host
+### 4. Connect Three.js as a first-class presentation host
 
 `examples/threejs-scene` already exposes scene actions and pointer events, but
 it is not converted to the new `presentation.*` document contract. Decide
@@ -97,14 +96,14 @@ whether Three.js remains an engine-specific bridge or also implements the
 common presentation artifact lifecycle. Add an adapter/fixture if common
 operations are required.
 
-### 6. Add Unity and Unreal provider attachment
+### 5. Add Unity and Unreal provider attachment
 
 Unity has a native bridge package, but provider-level attachment is still
 unchecked in the roadmap. Define the endpoint/handle shape Xallet will pass,
 add an adapter conformance test, and implement the Unreal plugin against the
 same hello/capabilities/describe/act/events contract.
 
-### 7. Build the display-level fallback
+### 6. Build the display-level fallback
 
 The current browser adapters are semantic/runtime adapters. The planned
 provider-neutral display adapter still needs `display.describe`,
@@ -112,7 +111,7 @@ provider-neutral display adapter still needs `display.describe`,
 operations. Xallet should own the VNC/WebRTC/OS mechanism; Jangolova should
 translate approved agent intent into that contract.
 
-### 8. Harden operations and packaging
+### 7. Harden operations and packaging
 
 Remaining production work includes per-capability authorization, audit logs,
 reconnection/orphan recovery, generated protocol clients, compatibility
@@ -121,12 +120,11 @@ remain `jangolova/engine-runtime` until a release process exists.
 
 ## Recommended next build order
 
-1. Add the real Chromium authored-presentation smoke test.
-2. Add source size/origin/revision policy and update the provider contract.
-3. Add policy/audit hooks around `presentation.execute` and capture.
-4. Normalize the document schema and semantic `describe` response.
-5. Decide and implement the Three.js common-host path.
-6. Continue with Unity/Unreal attachment, then display-level input.
+1. Add source size/origin/revision policy and update the provider contract.
+2. Add policy/audit hooks around `presentation.execute` and capture.
+3. Normalize the document schema and semantic `describe` response.
+4. Decide and implement the Three.js common-host path.
+5. Continue with Unity/Unreal attachment, then display-level input.
 
 ## Useful files
 

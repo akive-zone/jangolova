@@ -4,4 +4,5 @@ set -euo pipefail
 if [[ "$#" -gt 0 ]]; then
   exec "$@"
 fi
-exec tests/docker/browser-interaction-smoke-test.sh
+tests/docker/browser-interaction-smoke-test.sh
+exec tests/docker/web-presentation-smoke-test.sh

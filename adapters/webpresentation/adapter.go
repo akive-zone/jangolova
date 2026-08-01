@@ -151,7 +151,7 @@ func (Adapter) Connect(ctx context.Context, spec manifest.EngineSpec, target orc
 		running.terminate()
 		return nil, fmt.Errorf("decode web-presentation worker handshake: %w", err)
 	}
-	running.capabilities = stableStrings(connected.Capabilities)
+	running.capabilities = stableStrings(append(capabilityNames(), connected.Capabilities...))
 	running.events <- orchestrator.EngineEvent{Type: "presentation.connected", Status: "connected", OccurredAt: time.Now().UTC()}
 	return running, nil
 }

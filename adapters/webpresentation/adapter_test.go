@@ -62,3 +62,19 @@ func TestCapabilityNamesExposePresentationContract(t *testing.T) {
 		}
 	}
 }
+
+func TestConnectedCapabilitiesRetainCommonInteractionMethods(t *testing.T) {
+	values := stableStrings(append(capabilityNames(), "presentation.write", "custom.presentation.action"))
+	for _, required := range []string{"describe", "act", "events", "presentation.write", "custom.presentation.action"} {
+		found := false
+		for _, value := range values {
+			if value == required {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("connected capabilities missing %q: %v", required, values)
+		}
+	}
+}

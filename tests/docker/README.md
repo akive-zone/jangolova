@@ -10,10 +10,19 @@ Build the fixture:
 docker compose -f tests/docker/compose.yaml build engine-test
 ```
 
-Run both browser interaction engines against test-owned Chromium and Xvfb:
+Run both browser interaction engines and the authored-presentation path against
+test-owned Chromium and Xvfb:
 
 ```bash
 docker compose -f tests/docker/compose.yaml run --rm engine-test
+```
+
+Run only the authored-presentation smoke test:
+
+```bash
+docker compose -f tests/docker/compose.yaml run --rm \
+  --entrypoint tests/docker/web-presentation-smoke-test.sh \
+  engine-test
 ```
 
 Run Puppeteer over WebDriver BiDi against test-owned Firefox:
@@ -41,7 +50,8 @@ docker compose -f tests/docker/compose.yaml run --rm \
 ```
 
 The fixtures launch Chromium, Firefox, or WebKitGTK directly, give only the
-CDP, WebDriver BiDi, or existing WebDriver-session coordinates to Jangolova,
-and verify that disconnecting Jangolova leaves the browser running. No VNC,
-public-port, profile-volume, or production placement configuration belongs to
-this harness.
+source URL, CDP, WebDriver BiDi, or existing WebDriver-session coordinates to
+Jangolova, and verify that disconnecting Jangolova leaves the browser and
+independently served presentation target running. No VNC, public-port,
+profile-volume, or production placement configuration belongs to this
+harness.
