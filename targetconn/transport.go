@@ -23,12 +23,13 @@ func HTTPClient(endpoint orchestrator.TargetEndpoint, timeout time.Duration) (*h
 		return nil, err
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if endpoint.Connection != nil && endpoint.Connection.TLS != nil {
+	snapshot := endpoint.Connection.Snapshot()
+	if snapshot.TLS != nil {
 		parsed, err := url.Parse(endpoint.URL)
 		if err != nil || parsed.Scheme != "https" {
 			return nil, errors.New("TLS connection material requires an https endpoint")
 		}
-		config, err := tlsConfig(endpoint.Connection.TLS)
+		config, err := tlsConfig(snapshot.TLS)
 		if err != nil {
 			return nil, err
 		}
@@ -47,11 +48,7 @@ func Headers(endpoint orchestrator.TargetEndpoint) map[string]string {
 	if endpoint.Connection == nil {
 		return nil
 	}
-	values := make(map[string]string, len(endpoint.Connection.Headers))
-	for name, value := range endpoint.Connection.Headers {
-		values[name] = value
-	}
-	return values
+	return endpoint.Connection.Snapshot().Headers
 }
 
 type materialTransport struct {
@@ -60,12 +57,13 @@ type materialTransport struct {
 }
 
 func (t *materialTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	if !t.material.ExpiresAt.IsZero() && !t.material.ExpiresAt.After(time.Now()) {
+	snapshot := t.material.Snapshot()
+	if !snapshot.ExpiresAt.IsZero() && !snapshot.ExpiresAt.After(time.Now()) {
 		return nil, errors.New("target connection material has expired")
 	}
 	cloned := request.Clone(request.Context())
 	cloned.Header = request.Header.Clone()
-	for name, value := range t.material.Headers {
+	for name, value := range snapshot.Headers {
 		cloned.Header.Set(name, value)
 	}
 	return t.base.RoundTrip(cloned)
@@ -110,10 +108,13 @@ func NodeEnvironment(endpoint orchestrator.TargetEndpoint, current []string) ([]
 	if err := Validate(endpoint); err != nil {
 		return nil, err
 	}
-	if endpoint.Connection == nil || endpoint.Connection.TLS == nil {
+	if endpoint.Connection == nil {
 		return current, nil
 	}
-	material := endpoint.Connection.TLS
+	material := endpoint.Connection.Snapshot().TLS
+	if material == nil {
+		return current, nil
+	}
 	if material.ClientCertificateFile != "" {
 		return nil, errors.New("CDP worker does not support TLS client certificates")
 	}

@@ -13,28 +13,41 @@ import (
 
 const minimumCredentialValidity = 5 * time.Second
 
+type RenewalOptions struct {
+	RenewBefore    time.Duration
+	RetryInterval  time.Duration
+	ResolveTimeout time.Duration
+}
+
+var defaultRenewalOptions = RenewalOptions{
+	RenewBefore: 30 * time.Second, RetryInterval: 2 * time.Second, ResolveTimeout: 10 * time.Second,
+}
+
 // Prepare resolves all references into a cloned target. Release must be called
 // after the adapter disconnects, or immediately if connection fails.
 func Prepare(ctx context.Context, resolver Resolver, target orchestrator.EngineTarget) (orchestrator.EngineTarget, func(context.Context) error, error) {
+	return PrepareWithOptions(ctx, resolver, target, defaultRenewalOptions)
+}
+
+// PrepareWithOptions exists for deterministic embedders and conformance tests.
+// Production callers should normally use Prepare's conservative defaults.
+func PrepareWithOptions(ctx context.Context, resolver Resolver, target orchestrator.EngineTarget, options RenewalOptions) (orchestrator.EngineTarget, func(context.Context) error, error) {
+	options = normalizeRenewalOptions(options)
 	prepared := cloneTarget(target)
 	var materials []*orchestrator.EndpointConnection
-	var releases []func(context.Context) error
+	var leases []*materialLease
 	var releaseOnce sync.Once
 	var releaseErr error
 	release := func(releaseCtx context.Context) error {
 		releaseOnce.Do(func() {
 			var problems []error
-			for index := len(releases) - 1; index >= 0; index-- {
-				if releases[index] != nil {
-					if err := releases[index](releaseCtx); err != nil {
-						problems = append(problems, errors.New("release connection material"))
-					}
+			for index := len(leases) - 1; index >= 0; index-- {
+				if err := leases[index].close(releaseCtx); err != nil {
+					problems = append(problems, err)
 				}
 			}
 			for _, material := range materials {
-				wipeHeaders(material.Headers)
-				material.TLS = nil
-				material.ExpiresAt = time.Time{}
+				material.Clear()
 			}
 			releaseErr = errors.Join(problems...)
 		})
@@ -72,18 +85,220 @@ func Prepare(ctx context.Context, resolver Resolver, target orchestrator.EngineT
 				_ = release(context.Background())
 				return orchestrator.EngineTarget{}, func(context.Context) error { return nil }, referenceError(item.kind, item.reference, err)
 			}
+			lease := newMaterialLease(resolver, Request{
+				Reference: item.reference, Kind: item.kind, TargetID: target.TargetID,
+				EndpointName: endpoint.Name, Protocol: endpoint.Protocol, Audience: endpoint.Audience,
+			}, material, connection, options)
+			lease.apply(material)
+			leases = append(leases, lease)
 			if item.kind == CredentialReference {
-				connection.Headers = cloneHeaders(material.Headers)
-			} else {
-				connection.TLS = material.TLS
+				lease.start()
 			}
-			connection.ExpiresAt = earliest(connection.ExpiresAt, material.ExpiresAt)
-			releases = append(releases, material.Release)
 		}
 		endpoint.Connection = connection
 		materials = append(materials, connection)
 	}
 	return prepared, release, nil
+}
+
+type materialLease struct {
+	mu         sync.Mutex
+	resolver   Resolver
+	request    Request
+	current    Material
+	connection *orchestrator.EndpointConnection
+	options    RenewalOptions
+	stop       chan struct{}
+	closed     bool
+	startOnce  sync.Once
+	pending    map[uint64]Material
+}
+
+func newMaterialLease(resolver Resolver, request Request, material Material, connection *orchestrator.EndpointConnection, options RenewalOptions) *materialLease {
+	return &materialLease{
+		resolver: resolver, request: request, current: material, connection: connection,
+		options: options, stop: make(chan struct{}), pending: make(map[uint64]Material),
+	}
+}
+
+func (l *materialLease) apply(material Material) uint64 {
+	if l.request.Kind == CredentialReference {
+		return l.connection.ReplaceCredential(cloneHeaders(material.Headers), material.ExpiresAt)
+	}
+	return l.connection.ReplaceTLS(material.TLS, material.ExpiresAt)
+}
+
+func (l *materialLease) start() {
+	l.startOnce.Do(func() { go l.run() })
+}
+
+func (l *materialLease) run() {
+	for {
+		l.mu.Lock()
+		if l.closed {
+			l.mu.Unlock()
+			return
+		}
+		expiresAt := l.current.ExpiresAt
+		l.mu.Unlock()
+		delay := time.Until(expiresAt) - l.options.RenewBefore
+		if delay < 100*time.Millisecond {
+			delay = 100 * time.Millisecond
+		}
+		if !waitForLease(delay, l.stop) {
+			return
+		}
+		if l.renew() {
+			continue
+		}
+		if !waitForLease(l.options.RetryInterval, l.stop) {
+			return
+		}
+	}
+}
+
+func (l *materialLease) renew() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), l.options.ResolveTimeout)
+	material, err := l.resolver.Resolve(ctx, l.request)
+	cancel()
+	if err != nil || validateResolvedMaterial(l.request.Kind, material) != nil {
+		if err == nil {
+			releaseMaterial(context.Background(), material)
+		}
+		return false
+	}
+	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
+		releaseMaterial(context.Background(), material)
+		return false
+	}
+	if !material.ExpiresAt.After(l.current.ExpiresAt) {
+		l.mu.Unlock()
+		releaseMaterial(context.Background(), material)
+		return false
+	}
+	previous := l.current
+	l.current = material
+	revision := l.apply(material)
+	if requiresConnectionAcknowledgement(l.request.Protocol) {
+		l.pending[revision] = previous
+	}
+	l.mu.Unlock()
+	if requiresConnectionAcknowledgement(l.request.Protocol) {
+		l.waitForAcknowledgement(revision, previous.ExpiresAt)
+		l.releasePending(revision)
+	} else {
+		releaseMaterial(context.Background(), previous)
+	}
+	return true
+}
+
+func (l *materialLease) close(ctx context.Context) error {
+	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
+		return nil
+	}
+	l.closed = true
+	close(l.stop)
+	material := l.current
+	l.current = Material{}
+	values := make([]Material, 0, len(l.pending)+1)
+	values = append(values, material)
+	for _, pending := range l.pending {
+		values = append(values, pending)
+	}
+	l.pending = nil
+	l.mu.Unlock()
+	var problems []error
+	for _, value := range values {
+		if err := releaseMaterial(ctx, value); err != nil {
+			problems = append(problems, err)
+		}
+	}
+	return errors.Join(problems...)
+}
+
+func (l *materialLease) waitForAcknowledgement(revision uint64, oldExpiry time.Time) {
+	acknowledgements, acknowledged := l.connection.Acknowledgements()
+	if acknowledged >= revision {
+		return
+	}
+	delay := time.Until(oldExpiry)
+	if delay < 0 {
+		delay = 0
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	for {
+		select {
+		case value := <-acknowledgements:
+			if value >= revision {
+				return
+			}
+		case <-timer.C:
+			return
+		case <-l.stop:
+			return
+		}
+	}
+}
+
+func (l *materialLease) releasePending(revision uint64) {
+	l.mu.Lock()
+	material, ok := l.pending[revision]
+	if ok {
+		delete(l.pending, revision)
+	}
+	l.mu.Unlock()
+	if ok {
+		releaseMaterial(context.Background(), material)
+	}
+}
+
+func requiresConnectionAcknowledgement(protocol string) bool {
+	switch protocol {
+	case "cdp", "webdriver-bidi":
+		return true
+	default:
+		return false
+	}
+}
+
+func releaseMaterial(ctx context.Context, material Material) error {
+	var err error
+	if material.Release != nil {
+		if releaseErr := material.Release(ctx); releaseErr != nil {
+			err = errors.New("release connection material")
+		}
+	}
+	wipeHeaders(material.Headers)
+	return err
+}
+
+func waitForLease(delay time.Duration, stop <-chan struct{}) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-stop:
+		return false
+	}
+}
+
+func normalizeRenewalOptions(options RenewalOptions) RenewalOptions {
+	if options.RenewBefore <= 0 {
+		options.RenewBefore = defaultRenewalOptions.RenewBefore
+	}
+	if options.RetryInterval <= 0 {
+		options.RetryInterval = defaultRenewalOptions.RetryInterval
+	}
+	if options.ResolveTimeout <= 0 {
+		options.ResolveTimeout = defaultRenewalOptions.ResolveTimeout
+	}
+	return options
 }
 
 func validateResolvedMaterial(kind ReferenceKind, material Material) error {
@@ -119,7 +334,8 @@ func validateResolvedMaterial(kind ReferenceKind, material Material) error {
 }
 
 func Validate(endpoint orchestrator.TargetEndpoint) error {
-	if endpoint.Connection != nil && !endpoint.Connection.ExpiresAt.IsZero() && !endpoint.Connection.ExpiresAt.After(time.Now()) {
+	snapshot := endpoint.Connection.Snapshot()
+	if !snapshot.ExpiresAt.IsZero() && !snapshot.ExpiresAt.After(time.Now()) {
 		return errors.New("target connection material has expired")
 	}
 	return nil
@@ -146,13 +362,6 @@ func cloneValues(values map[string]string) map[string]string {
 		result[name] = value
 	}
 	return result
-}
-
-func earliest(left, right time.Time) time.Time {
-	if left.IsZero() || !right.IsZero() && right.Before(left) {
-		return right
-	}
-	return left
 }
 
 func referenceError(kind ReferenceKind, reference string, err error) error {

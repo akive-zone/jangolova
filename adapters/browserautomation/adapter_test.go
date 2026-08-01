@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,6 +34,52 @@ func TestAdapterPassesResolvedHeadersToRemoteCDPWorker(t *testing.T) {
 	}
 	if err := instance.Disconnect(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAdapterReconnectsWorkerWhenCredentialRotates(t *testing.T) {
+	worker, err := filepath.Abs("../../tests/connection-material-worker.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	options, _ := json.Marshal(map[string]string{"workerPath": worker})
+	connection := &orchestrator.EndpointConnection{
+		Headers:   map[string]string{"Authorization": "Bearer fixture-secret"},
+		ExpiresAt: time.Now().Add(time.Minute),
+	}
+	connected, err := Playwright().Connect(context.Background(), manifest.EngineSpec{Options: options}, orchestrator.EngineTarget{
+		Kind: "browser", Endpoints: []orchestrator.TargetEndpoint{{
+			Name: "control", Protocol: "cdp", URL: "wss://browser.remote.example/devtools/browser/42", Connection: connection,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection.ReplaceCredential(map[string]string{"Authorization": "Bearer rotated-secret"}, time.Now().Add(2*time.Minute))
+	events := connected.(orchestrator.EngineEventSource).EngineEvents()
+	deadline := time.After(5 * time.Second)
+	sawRedactedFailure := false
+	for {
+		select {
+		case event := <-events:
+			switch event.Type {
+			case "interaction.connection.renewal_failed":
+				if strings.Contains(event.Message, "rotated-secret") || !strings.Contains(event.Message, "[REDACTED]") {
+					t.Fatalf("renewal failure was not redacted: %#v", event)
+				}
+				sawRedactedFailure = true
+			case "interaction.connection.renewed":
+				if !sawRedactedFailure {
+					t.Fatal("worker reconnect did not exercise retry path")
+				}
+				if err := connected.Disconnect(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("credential rotation did not reconnect the worker")
+		}
 	}
 }
 

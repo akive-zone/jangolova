@@ -62,6 +62,10 @@ type instance struct {
 	nextID        atomic.Uint64
 	disconnecting atomic.Bool
 	closed        atomic.Bool
+	endpoint      orchestrator.TargetEndpoint
+	renewalStop   chan struct{}
+	renewalOnce   sync.Once
+	renewalWG     sync.WaitGroup
 }
 
 type lockedBuffer struct {
@@ -146,14 +150,19 @@ func (Adapter) Connect(ctx context.Context, spec manifest.EngineSpec, target orc
 	}
 	stderr := &lockedBuffer{}
 	command.Stderr = stderr
-	running := &instance{command: command, stdin: stdin, responses: make(chan rpcResponse, 1), done: make(chan error, 1), events: make(chan orchestrator.EngineEvent, 16), stderr: stderr, policy: config.resolved}
+	running := &instance{
+		command: command, stdin: stdin, responses: make(chan rpcResponse, 1), done: make(chan error, 1),
+		events: make(chan orchestrator.EngineEvent, 16), stderr: stderr, policy: config.resolved,
+		endpoint: endpoint, renewalStop: make(chan struct{}),
+	}
 	if err := command.Start(); err != nil {
 		return nil, fmt.Errorf("start web-presentation worker: %w", err)
 	}
 	go running.readResponses(stdout)
 	go running.wait()
+	connectionSnapshot := endpoint.Connection.Snapshot()
 	params, _ := json.Marshal(map[string]any{
-		"endpoint": endpoint.URL, "headers": targetconn.Headers(endpoint),
+		"endpoint": endpoint.URL, "headers": connectionSnapshot.Headers,
 		"source": strings.TrimSpace(spec.Source), "policy": config.resolved,
 	})
 	result, err := running.request(ctx, "connect", params)
@@ -169,6 +178,14 @@ func (Adapter) Connect(ctx context.Context, spec manifest.EngineSpec, target orc
 		return nil, fmt.Errorf("decode web-presentation worker handshake: %w", err)
 	}
 	running.capabilities = stableStrings(append(capabilityNames(), connected.Capabilities...))
+	if endpoint.Connection != nil {
+		updates := endpoint.Connection.Updates()
+		running.renewalWG.Add(1)
+		go func() {
+			defer running.renewalWG.Done()
+			running.watchConnectionMaterial(updates, connectionSnapshot.Revision)
+		}()
+	}
 	running.events <- orchestrator.EngineEvent{Type: "presentation.connected", Status: "connected", OccurredAt: time.Now().UTC()}
 	return running, nil
 }
@@ -243,6 +260,7 @@ func (i *instance) request(ctx context.Context, method string, params json.RawMe
 }
 
 func (i *instance) Disconnect(ctx context.Context) error {
+	i.stopConnectionMaterialWatch()
 	if !i.disconnecting.CompareAndSwap(false, true) {
 		select {
 		case <-i.done:
@@ -267,6 +285,11 @@ func (i *instance) Disconnect(ctx context.Context) error {
 
 func (i *instance) EngineHealth(ctx context.Context) orchestrator.EngineHealth {
 	health := orchestrator.EngineHealth{ObservedAt: time.Now().UTC()}
+	if err := targetconn.Validate(i.endpoint); err != nil {
+		health.Status = orchestrator.EngineHealthUnhealthy
+		health.Message = err.Error()
+		return health
+	}
 	result, err := i.request(ctx, "health", json.RawMessage(`{}`))
 	if err != nil {
 		health.Status = orchestrator.EngineHealthUnhealthy
@@ -302,6 +325,8 @@ func (i *instance) readResponses(stdout io.Reader) {
 func (i *instance) wait() {
 	err := i.command.Wait()
 	i.closed.Store(true)
+	i.stopConnectionMaterialWatch()
+	i.renewalWG.Wait()
 	i.done <- err
 	close(i.done)
 	event := orchestrator.EngineEvent{Type: "presentation.disconnected", Status: "disconnected", OccurredAt: time.Now().UTC()}
@@ -315,6 +340,76 @@ func (i *instance) wait() {
 	default:
 	}
 	close(i.events)
+}
+func (i *instance) watchConnectionMaterial(updates <-chan uint64, connectedRevision uint64) {
+	for {
+		currentRevision := i.endpoint.Connection.Snapshot().Revision
+		if currentRevision > connectedRevision {
+			if !i.reconnectWithMaterial(currentRevision) {
+				return
+			}
+			connectedRevision = currentRevision
+			continue
+		}
+		select {
+		case <-i.renewalStop:
+			return
+		case revision, open := <-updates:
+			if !open || i.disconnecting.Load() || i.closed.Load() {
+				return
+			}
+			if revision <= connectedRevision {
+				continue
+			}
+			if !i.reconnectWithMaterial(revision) {
+				return
+			}
+			connectedRevision = revision
+		}
+	}
+}
+func (i *instance) reconnectWithMaterial(revision uint64) bool {
+	reportedFailure := false
+	for {
+		params, _ := json.Marshal(map[string]any{
+			"endpoint": i.endpoint.URL, "headers": targetconn.Headers(i.endpoint),
+		})
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		_, err := i.request(ctx, "reconnect", params)
+		cancel()
+		if err == nil {
+			i.endpoint.Connection.Acknowledge(revision)
+			return i.emitConnectionEvent(orchestrator.EngineEvent{Type: "interaction.connection.renewed", OccurredAt: time.Now().UTC()})
+		}
+		if !reportedFailure {
+			reportedFailure = true
+			if !i.emitConnectionEvent(orchestrator.EngineEvent{
+				Type:       "interaction.connection.renewal_failed",
+				Message:    targetconn.RedactString(err.Error(), orchestrator.EngineTarget{Endpoints: []orchestrator.TargetEndpoint{i.endpoint}}),
+				OccurredAt: time.Now().UTC(),
+			}) {
+				return false
+			}
+		}
+		timer := time.NewTimer(2 * time.Second)
+		select {
+		case <-timer.C:
+		case <-i.renewalStop:
+			timer.Stop()
+			return false
+		}
+	}
+}
+func (i *instance) emitConnectionEvent(event orchestrator.EngineEvent) bool {
+	select {
+	case i.events <- event:
+		return true
+	case <-i.renewalStop:
+		return false
+	}
+}
+func (i *instance) stopConnectionMaterialWatch() {
+	i.renewalOnce.Do(func() { close(i.renewalStop) })
 }
 func (i *instance) terminate() {
 	if i.command != nil && i.command.Process != nil {

@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 import { createServer, request as httpRequest } from "node:http";
 import { connect as tcpConnect } from "node:net";
+import { readFileSync } from "node:fs";
 import process from "node:process";
 
 const listenPort = Number.parseInt(process.env.AUTHENTICATED_CDP_PORT || "9333", 10);
 const upstreamPort = Number.parseInt(process.env.CDP_UPSTREAM_PORT || "9224", 10);
 const expectedAuthorization = process.env.CDP_AUTHORIZATION;
+const authorizationFile = process.env.CDP_AUTHORIZATION_FILE;
 
-if (!expectedAuthorization) throw new Error("CDP_AUTHORIZATION is required");
+if (!expectedAuthorization && !authorizationFile) throw new Error("CDP_AUTHORIZATION or CDP_AUTHORIZATION_FILE is required");
 
 function authorized(request) {
-  return request.headers.authorization === expectedAuthorization;
+  const expected = authorizationFile ? readFileSync(authorizationFile, "utf8").trim() : expectedAuthorization;
+  return request.headers.authorization === expected;
 }
 
 const server = createServer((request, response) => {

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { rename, writeFile } from "node:fs/promises";
 import process from "node:process";
 
 const providerURL = process.env.JANGOLOVA_PROVIDER_URL || "http://127.0.0.1:7392";
@@ -8,6 +9,9 @@ const cdpURL = process.env.PRESENTATION_CDP_URL || "http://127.0.0.1:9224";
 const sourceURL = process.env.PRESENTATION_SOURCE_URL || "http://127.0.0.1:8081/";
 const authenticatedCDPBase = process.env.PRESENTATION_AUTHENTICATED_CDP_BASE;
 const credentialRef = process.env.PRESENTATION_CREDENTIAL_REF;
+const credentialMaterialPath = process.env.PRESENTATION_CREDENTIAL_MATERIAL_PATH;
+const relayAuthorizationPath = process.env.PRESENTATION_RELAY_AUTHORIZATION_PATH;
+const rotatedAuthorization = process.env.PRESENTATION_ROTATED_AUTHORIZATION;
 const instanceID = "presentation-smoke";
 
 assert.ok(token, "JANGOLOVA_PROVIDER_TOKEN is required");
@@ -88,6 +92,27 @@ assert.equal(connected.status, "connected");
 assert.equal(connected.adapter, "web-presentation");
 for (const capability of ["presentation.write", "presentation.mount", "artifact.kind.web.entrypoint", "artifact.transport.http", "presentation.capture", "events"]) {
   assert.ok(connected.capabilities.includes(capability), `missing ${capability}`);
+}
+
+if (credentialMaterialPath && relayAuthorizationPath && rotatedAuthorization) {
+  const rotatedDocument = {
+    apiVersion: "interaction.connection/v1alpha1",
+    kind: "credential",
+    headers: { Authorization: rotatedAuthorization },
+    expiresAt: new Date(Date.now() + 300000).toISOString(),
+  };
+  const temporaryPath = `${credentialMaterialPath}.next`;
+  await writeFile(temporaryPath, JSON.stringify(rotatedDocument), { mode: 0o600 });
+  await writeFile(relayAuthorizationPath, `${rotatedAuthorization}\n`, { mode: 0o600 });
+  await rename(temporaryPath, credentialMaterialPath);
+  const deadline = Date.now() + 8000;
+  let renewed = false;
+  while (!renewed && Date.now() < deadline) {
+    const { value: batch } = await request(`/v1/instances/${instanceID}/events?after=0&limit=32`);
+    renewed = batch.events.some((event) => event.type === "interaction.connection.renewed");
+    if (!renewed) await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(renewed, true, "credential lease did not reconnect the CDP worker");
 }
 
 const write = await call("act", {

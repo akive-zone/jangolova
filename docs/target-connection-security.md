@@ -41,9 +41,18 @@ A credential is a set of connection headers with a mandatory expiry:
 ```
 
 Credentials already expired or expiring within five seconds are rejected.
-Long-running HTTP adapters check expiry before every request. WebSocket
-credentials authorize the connection handshake; rotation creates a new
-interaction instance.
+Jangolova re-resolves a credential before expiry and accepts a replacement
+only when its expiry is later than the active generation. The replacement is
+published atomically; the previous resolver lease is released afterward.
+Failed refreshes retry without replacing still-valid material.
+
+Long-running HTTP adapters read the current generation before every request.
+CDP and BiDi workers establish a replacement authenticated connection, switch
+to it, and then disconnect the old connection. This preserves the Jangolova
+interaction instance and the caller-owned browser. Successful worker rotation
+emits `interaction.connection.renewed`; a failed worker handshake emits
+`interaction.connection.renewal_failed`. If no replacement arrives before
+expiry, active health becomes unhealthy and HTTP requests are rejected.
 
 TLS material contains caller-managed absolute file paths:
 
@@ -91,6 +100,8 @@ The directory layout is:
 ```
 
 The reference is validated as an identifier and never interpreted as a path.
+Material files should be written to a temporary sibling and atomically renamed
+over the active document so a resolver never observes a partial generation.
 The environment resolver is attempted first, followed by the directory
 resolver. Embedders inside the Jangolova distribution can inject a callback
 resolver with `engineprovider.WithTargetResolver`, allowing a dedicated secret
@@ -98,19 +109,24 @@ manager without changing target or adapter contracts.
 
 ## Adapter support
 
-| Adapter family | Headers | Private CA | Client certificate |
-| --- | --- | --- | --- |
-| Playwright CDP | Yes | Yes | No |
-| Puppeteer CDP/BiDi | Yes | Yes | No |
-| Web presentation CDP | Yes | Yes | No |
-| WebDriver Classic | Yes | Yes | Yes |
-| Safari MCP HTTP | Yes | Yes | Yes |
+| Adapter family | Headers | Credential renewal | Private CA | Client certificate |
+| --- | --- | --- | --- | --- |
+| Playwright CDP | Yes | Reconnect | Yes | No |
+| Puppeteer CDP/BiDi | Yes | Reconnect | Yes | No |
+| Web presentation CDP | Yes | Reconnect | Yes | No |
+| WebDriver Classic | Yes | Per request | Yes | Yes |
+| Safari MCP HTTP | Yes | Per request | Yes | Yes |
 
 CDP workers authenticate both HTTP discovery and WebSocket attachment. Worker
 processes receive headers over private standard input, never command-line
 arguments. Node CDP workers reject mTLS explicitly because the supported
 libraries do not expose a portable client-certificate hook; an authenticated
 caller-owned relay remains the appropriate boundary for that case.
+
+TLS material is resolved and leased safely but is fixed for the lifetime of
+the adapter transport or Node worker. Rotating a CA or client certificate
+currently requires a new interaction instance; live TLS transport replacement
+is separate from credential-header renewal.
 
 The standalone command accepts matching endpoint reference flags:
 

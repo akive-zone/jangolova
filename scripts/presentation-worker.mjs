@@ -25,6 +25,7 @@ async function handleLine(line) {
 
 async function dispatch(method, params) {
   if (method === "connect") return connect(params.endpoint, params.source, params.policy, params.headers);
+  if (method === "reconnect") return reconnect(params.endpoint, params.headers);
   if (method === "disconnect") return disconnect();
   if (method === "health") return { connected: isConnected() && Boolean(page) };
   requireConnection();
@@ -55,11 +56,8 @@ async function dispatch(method, params) {
 async function connect(endpoint, source, policy = {}, headers = {}) {
   if (typeof endpoint !== "string" || endpoint.length === 0) throw new Error("CDP endpoint is required");
   activePolicy = policy || {};
-  const { default: puppeteer } = await import("puppeteer-core");
-  const connectionHeaders = safeHeaders(headers);
-  const connectionEndpoint = await resolveCDPEndpoint(endpoint, connectionHeaders);
-  browser = await puppeteer.connect({ browserWSEndpoint: connectionEndpoint, protocol: "cdp", headers: connectionHeaders });
-  browser.on("disconnected", () => { disconnected = true; });
+  browser = await openBrowser(endpoint, headers);
+  observeBrowser(browser);
   const pages = await browser.pages();
   page = pages.at(-1) || await browser.newPage();
   cdpSession = await page.target().createCDPSession();
@@ -69,6 +67,45 @@ async function connect(endpoint, source, policy = {}, headers = {}) {
   if (!ready) throw new Error("active page does not expose window.jangolova presentation bridge");
   const capabilities = await page.evaluate(() => (window.jangolova.capabilities?.() || []).map((item) => item.name));
   return { capabilities };
+}
+async function reconnect(endpoint, headers = {}) {
+  requireConnection();
+  const previous = browser;
+  const previousPageURL = page?.url?.() || "";
+  const previousSession = cdpSession;
+  const replacement = await openBrowser(endpoint, headers);
+  let replacementPage;
+  let replacementSession;
+  let replacementAssetPolicy;
+  try {
+    const replacementPages = await replacement.pages();
+    replacementPage = replacementPages.find((candidate) => candidate.url() === previousPageURL)
+      || replacementPages.at(-1)
+      || await replacement.newPage();
+    replacementSession = await replacementPage.target().createCDPSession();
+    replacementAssetPolicy = await installAssetPolicy(replacementPage, activePolicy.allowedAssetOrigins, previousPageURL || replacementPage.url());
+  } catch (error) {
+    if (replacement?.disconnect) replacement.disconnect();
+    throw error;
+  }
+  browser = replacement;
+  page = replacementPage;
+  cdpSession = replacementSession;
+  assetPolicy = replacementAssetPolicy;
+  disconnected = false;
+  observeBrowser(replacement);
+  if (previousSession?.detach) await previousSession.detach().catch(() => {});
+  if (previous?.disconnect) previous.disconnect();
+  return { reconnected: true };
+}
+async function openBrowser(endpoint, headers) {
+  const { default: puppeteer } = await import("puppeteer-core");
+  const connectionHeaders = safeHeaders(headers);
+  const connectionEndpoint = await resolveCDPEndpoint(endpoint, connectionHeaders);
+  return puppeteer.connect({ browserWSEndpoint: connectionEndpoint, protocol: "cdp", headers: connectionHeaders });
+}
+function observeBrowser(candidate) {
+  candidate.on("disconnected", () => { if (browser === candidate) disconnected = true; });
 }
 async function resolveCDPEndpoint(endpoint, headers) {
   if (endpoint.startsWith("ws://") || endpoint.startsWith("wss://")) return endpoint;

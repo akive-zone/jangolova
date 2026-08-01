@@ -62,7 +62,9 @@
 
 ## Phase 5: Hardening
 
-- [ ] Add renewable connection leases for long-lived HTTP interactions.
+- [x] Add renewable credential leases for HTTP and long-lived CDP/BiDi
+  interactions.
+- [ ] Add live CA and client-certificate transport rotation.
 - [ ] Extend per-capability policy hooks and audit records beyond the current
   presentation execute/capture path.
 - [ ] Add orphan recovery and reconnection.

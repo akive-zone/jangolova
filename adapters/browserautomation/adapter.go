@@ -65,6 +65,11 @@ type instance struct {
 	nextID         atomic.Uint64
 	disconnecting  atomic.Bool
 	closed         atomic.Bool
+	endpoint       orchestrator.TargetEndpoint
+	targetProtocol string
+	renewalStop    chan struct{}
+	renewalOnce    sync.Once
+	renewalWG      sync.WaitGroup
 }
 
 type lockedBuffer struct {
@@ -162,6 +167,9 @@ func (a Adapter) Connect(
 		done:           make(chan error, 1),
 		events:         make(chan orchestrator.EngineEvent, 1),
 		stderr:         stderr,
+		endpoint:       endpoint,
+		targetProtocol: targetProtocol,
+		renewalStop:    make(chan struct{}),
 	}
 	if err := command.Start(); err != nil {
 		return nil, fmt.Errorf("start %s interaction worker: %w", a.implementation, err)
@@ -169,10 +177,11 @@ func (a Adapter) Connect(
 	go running.readResponses(stdout)
 	go running.wait()
 
+	connectionSnapshot := endpoint.Connection.Snapshot()
 	connectParams, _ := json.Marshal(map[string]any{
 		"endpoint": endpoint.URL,
 		"protocol": targetProtocol,
-		"headers":  targetconn.Headers(endpoint),
+		"headers":  connectionSnapshot.Headers,
 	})
 	result, err := running.request(ctx, "connect", connectParams)
 	if err != nil {
@@ -187,6 +196,14 @@ func (a Adapter) Connect(
 		return nil, fmt.Errorf("decode %s worker handshake: %w", a.implementation, err)
 	}
 	running.capabilities = stableStrings(connected.Capabilities)
+	if endpoint.Connection != nil {
+		updates := endpoint.Connection.Updates()
+		running.renewalWG.Add(1)
+		go func() {
+			defer running.renewalWG.Done()
+			running.watchConnectionMaterial(updates, connectionSnapshot.Revision)
+		}()
+	}
 	if source := strings.TrimSpace(spec.Source); source != "" {
 		params, _ := json.Marshal(map[string]any{
 			"name":  "browser.navigate",
@@ -254,6 +271,7 @@ func (i *instance) request(ctx context.Context, method string, params json.RawMe
 }
 
 func (i *instance) Disconnect(ctx context.Context) error {
+	i.stopConnectionMaterialWatch()
 	if !i.disconnecting.CompareAndSwap(false, true) {
 		select {
 		case <-i.done:
@@ -278,6 +296,11 @@ func (i *instance) Disconnect(ctx context.Context) error {
 
 func (i *instance) EngineHealth(ctx context.Context) orchestrator.EngineHealth {
 	health := orchestrator.EngineHealth{ObservedAt: time.Now().UTC()}
+	if err := targetconn.Validate(i.endpoint); err != nil {
+		health.Status = orchestrator.EngineHealthUnhealthy
+		health.Message = err.Error()
+		return health
+	}
 	result, err := i.request(ctx, "health", json.RawMessage(`{}`))
 	if err != nil {
 		health.Status = orchestrator.EngineHealthUnhealthy
@@ -318,6 +341,8 @@ func (i *instance) readResponses(stdout io.Reader) {
 func (i *instance) wait() {
 	err := i.command.Wait()
 	i.closed.Store(true)
+	i.stopConnectionMaterialWatch()
+	i.renewalWG.Wait()
 	i.done <- err
 	close(i.done)
 	event := orchestrator.EngineEvent{Type: "interaction.disconnected", Status: "disconnected", OccurredAt: time.Now().UTC()}
@@ -328,6 +353,81 @@ func (i *instance) wait() {
 	}
 	i.events <- event
 	close(i.events)
+}
+
+func (i *instance) watchConnectionMaterial(updates <-chan uint64, connectedRevision uint64) {
+	for {
+		currentRevision := i.endpoint.Connection.Snapshot().Revision
+		if currentRevision > connectedRevision {
+			if !i.reconnectWithMaterial(currentRevision) {
+				return
+			}
+			connectedRevision = currentRevision
+			continue
+		}
+		select {
+		case <-i.renewalStop:
+			return
+		case revision, open := <-updates:
+			if !open || i.disconnecting.Load() || i.closed.Load() {
+				return
+			}
+			if revision <= connectedRevision {
+				continue
+			}
+			if !i.reconnectWithMaterial(revision) {
+				return
+			}
+			connectedRevision = revision
+		}
+	}
+}
+
+func (i *instance) reconnectWithMaterial(revision uint64) bool {
+	reportedFailure := false
+	for {
+		params, _ := json.Marshal(map[string]any{
+			"endpoint": i.endpoint.URL, "protocol": i.targetProtocol,
+			"headers": targetconn.Headers(i.endpoint),
+		})
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		_, err := i.request(ctx, "reconnect", params)
+		cancel()
+		if err == nil {
+			i.endpoint.Connection.Acknowledge(revision)
+			return i.emitConnectionEvent(orchestrator.EngineEvent{Type: "interaction.connection.renewed", OccurredAt: time.Now().UTC()})
+		}
+		if !reportedFailure {
+			reportedFailure = true
+			if !i.emitConnectionEvent(orchestrator.EngineEvent{
+				Type:       "interaction.connection.renewal_failed",
+				Message:    targetconn.RedactString(err.Error(), orchestrator.EngineTarget{Endpoints: []orchestrator.TargetEndpoint{i.endpoint}}),
+				OccurredAt: time.Now().UTC(),
+			}) {
+				return false
+			}
+		}
+		timer := time.NewTimer(2 * time.Second)
+		select {
+		case <-timer.C:
+		case <-i.renewalStop:
+			timer.Stop()
+			return false
+		}
+	}
+}
+
+func (i *instance) emitConnectionEvent(event orchestrator.EngineEvent) bool {
+	select {
+	case i.events <- event:
+		return true
+	case <-i.renewalStop:
+		return false
+	}
+}
+
+func (i *instance) stopConnectionMaterialWatch() {
+	i.renewalOnce.Do(func() { close(i.renewalStop) })
 }
 
 func (i *instance) terminate() {

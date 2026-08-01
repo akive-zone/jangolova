@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -104,9 +105,11 @@ func TestDirectoryResolverUsesReferenceAsIdentifier(t *testing.T) {
 
 func TestHTTPClientAppliesHeaderAndEnforcesExpiry(t *testing.T) {
 	requests := 0
+	var expected atomic.Value
+	expected.Store("Bearer remote-session")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		requests++
-		if request.Header.Get("Authorization") != "Bearer remote-session" {
+		if request.Header.Get("Authorization") != expected.Load().(string) {
 			t.Errorf("authorization = %q", request.Header.Get("Authorization"))
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -126,12 +129,19 @@ func TestHTTPClientAppliesHeaderAndEnforcesExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	response.Body.Close()
-	connection.ExpiresAt = time.Now().Add(-time.Second)
+	expected.Store("Bearer rotated-session")
+	connection.ReplaceCredential(map[string]string{"Authorization": "Bearer rotated-session"}, time.Now().Add(2*time.Minute))
+	response, err = client.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	connection.ReplaceCredential(map[string]string{"Authorization": "Bearer rotated-session"}, time.Now().Add(-time.Second))
 	_, err = client.Get(server.URL)
 	if err == nil || !strings.Contains(err.Error(), "expired") {
 		t.Fatalf("expired request error = %v", err)
 	}
-	if requests != 1 {
+	if requests != 2 {
 		t.Fatalf("requests = %d", requests)
 	}
 }
@@ -178,6 +188,61 @@ func TestPrepareRejectsCredentialThatExpiresTooSoon(t *testing.T) {
 	}
 	if released != 1 {
 		t.Fatalf("release count = %d", released)
+	}
+}
+
+func TestPrepareRenewsCredentialAndReleasesBothGenerations(t *testing.T) {
+	var resolves atomic.Int32
+	var releases atomic.Int32
+	resolver := ResolverFunc(func(context.Context, Request) (Material, error) {
+		generation := resolves.Add(1)
+		token := "Bearer first-generation"
+		expiresAt := time.Now().Add(10 * time.Second)
+		if generation > 1 {
+			token = "Bearer second-generation"
+			expiresAt = time.Now().Add(time.Hour)
+		}
+		return Material{
+			Headers: map[string]string{"Authorization": token}, ExpiresAt: expiresAt,
+			Release: func(context.Context) error { releases.Add(1); return nil },
+		}, nil
+	})
+	target, release, err := PrepareWithOptions(context.Background(), resolver, orchestrator.EngineTarget{
+		TargetID: "browser-rotation", Endpoints: []orchestrator.TargetEndpoint{{
+			Name: "control", Protocol: "cdp", CredentialRef: "rotating-session",
+		}},
+	}, RenewalOptions{RenewBefore: 10 * time.Second, RetryInterval: 25 * time.Millisecond, ResolveTimeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := target.Endpoints[0].Connection
+	updates := connection.Updates()
+	var revision uint64
+	select {
+	case revision = <-updates:
+	case <-time.After(2 * time.Second):
+		t.Fatal("credential lease was not renewed")
+	}
+	snapshot := connection.Snapshot()
+	if snapshot.Headers["Authorization"] != "Bearer second-generation" || snapshot.Revision < 2 {
+		t.Fatalf("snapshot = %#v", snapshot)
+	}
+	if releases.Load() != 0 {
+		t.Fatalf("old generation released before reconnect acknowledgement: %d", releases.Load())
+	}
+	connection.Acknowledge(revision)
+	deadline := time.Now().Add(time.Second)
+	for releases.Load() != 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if releases.Load() != 1 {
+		t.Fatalf("old generation was not released after acknowledgement: %d", releases.Load())
+	}
+	if err := release(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if releases.Load() != 2 || len(connection.Snapshot().Headers) != 0 {
+		t.Fatalf("final releases = %d, snapshot = %#v", releases.Load(), connection.Snapshot())
 	}
 }
 

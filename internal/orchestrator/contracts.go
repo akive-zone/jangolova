@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"jangolova/internal/manifest"
@@ -36,6 +37,172 @@ type EndpointConnection struct {
 	Headers   map[string]string
 	TLS       *TLSConnection
 	ExpiresAt time.Time
+
+	mu                  sync.RWMutex
+	credentialExpiresAt time.Time
+	tlsExpiresAt        time.Time
+	revision            uint64
+	updates             chan uint64
+	acknowledged        uint64
+	acknowledgements    chan uint64
+	secretValues        map[string]struct{}
+	secretOrder         []string
+}
+
+type EndpointConnectionSnapshot struct {
+	Headers      map[string]string
+	TLS          *TLSConnection
+	ExpiresAt    time.Time
+	Revision     uint64
+	SecretValues []string
+}
+
+func (c *EndpointConnection) Snapshot() EndpointConnectionSnapshot {
+	if c == nil {
+		return EndpointConnectionSnapshot{}
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	secrets := make([]string, 0, len(c.secretValues))
+	for value := range c.secretValues {
+		secrets = append(secrets, value)
+	}
+	return EndpointConnectionSnapshot{
+		Headers: cloneConnectionValues(c.Headers), TLS: cloneTLSConnection(c.TLS),
+		ExpiresAt: c.ExpiresAt, Revision: c.revision, SecretValues: secrets,
+	}
+}
+
+func (c *EndpointConnection) Updates() <-chan uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.updates == nil {
+		c.updates = make(chan uint64, 1)
+	}
+	return c.updates
+}
+
+func (c *EndpointConnection) ReplaceCredential(headers map[string]string, expiresAt time.Time) uint64 {
+	c.mu.Lock()
+	c.Headers = cloneConnectionValues(headers)
+	if c.secretValues == nil {
+		c.secretValues = make(map[string]struct{})
+	}
+	for _, value := range headers {
+		if value != "" {
+			if _, exists := c.secretValues[value]; !exists {
+				c.secretValues[value] = struct{}{}
+				c.secretOrder = append(c.secretOrder, value)
+			}
+		}
+	}
+	for len(c.secretOrder) > 32 {
+		delete(c.secretValues, c.secretOrder[0])
+		c.secretOrder = c.secretOrder[1:]
+	}
+	c.credentialExpiresAt = expiresAt
+	c.recomputeExpiryLocked()
+	c.revision++
+	c.notifyLocked()
+	revision := c.revision
+	c.mu.Unlock()
+	return revision
+}
+
+func (c *EndpointConnection) ReplaceTLS(material *TLSConnection, expiresAt time.Time) uint64 {
+	c.mu.Lock()
+	c.TLS = cloneTLSConnection(material)
+	c.tlsExpiresAt = expiresAt
+	c.recomputeExpiryLocked()
+	c.revision++
+	c.notifyLocked()
+	revision := c.revision
+	c.mu.Unlock()
+	return revision
+}
+
+func (c *EndpointConnection) Acknowledge(revision uint64) {
+	c.mu.Lock()
+	if revision > c.acknowledged {
+		c.acknowledged = revision
+	}
+	if c.acknowledgements == nil {
+		c.acknowledgements = make(chan uint64, 1)
+	}
+	select {
+	case c.acknowledgements <- c.acknowledged:
+	default:
+		select {
+		case <-c.acknowledgements:
+		default:
+		}
+		c.acknowledgements <- c.acknowledged
+	}
+	c.mu.Unlock()
+}
+
+func (c *EndpointConnection) Acknowledgements() (<-chan uint64, uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.acknowledgements == nil {
+		c.acknowledgements = make(chan uint64, 1)
+	}
+	return c.acknowledgements, c.acknowledged
+}
+
+func (c *EndpointConnection) Clear() {
+	c.mu.Lock()
+	for name := range c.Headers {
+		delete(c.Headers, name)
+	}
+	c.Headers = nil
+	c.TLS = nil
+	c.ExpiresAt = time.Time{}
+	c.credentialExpiresAt = time.Time{}
+	c.tlsExpiresAt = time.Time{}
+	c.secretValues = nil
+	c.secretOrder = nil
+	c.revision++
+	c.notifyLocked()
+	c.mu.Unlock()
+}
+
+func (c *EndpointConnection) recomputeExpiryLocked() {
+	c.ExpiresAt = c.credentialExpiresAt
+	if c.ExpiresAt.IsZero() || !c.tlsExpiresAt.IsZero() && c.tlsExpiresAt.Before(c.ExpiresAt) {
+		c.ExpiresAt = c.tlsExpiresAt
+	}
+}
+
+func (c *EndpointConnection) notifyLocked() {
+	if c.updates == nil {
+		return
+	}
+	select {
+	case c.updates <- c.revision:
+	default:
+		select {
+		case <-c.updates:
+		default:
+		}
+		c.updates <- c.revision
+	}
+}
+
+func cloneConnectionValues(values map[string]string) map[string]string {
+	result := make(map[string]string, len(values))
+	for name, value := range values {
+		result[name] = value
+	}
+	return result
+}
+
+func cloneTLSConnection(value *TLSConnection) *TLSConnection {
+	if value == nil {
+		return nil
+	}
+	result := *value
+	return &result
 }
 
 // TLSConnection references caller-managed TLS files. The resolver owns their

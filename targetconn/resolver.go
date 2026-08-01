@@ -274,7 +274,13 @@ func stableSecretValues(target orchestrator.EngineTarget) []string {
 		if endpoint.Connection == nil {
 			continue
 		}
-		for name, value := range endpoint.Connection.Headers {
+		snapshot := endpoint.Connection.Snapshot()
+		for _, value := range snapshot.SecretValues {
+			if len(value) >= 4 {
+				seen[value] = struct{}{}
+			}
+		}
+		for name, value := range snapshot.Headers {
 			if len(value) >= 4 {
 				seen[value] = struct{}{}
 			}

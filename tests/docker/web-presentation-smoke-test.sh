@@ -13,7 +13,11 @@ asset_server_log="/tmp/jangolova-presentation-asset-server.log"
 relay_log="/tmp/jangolova-authenticated-cdp-relay.log"
 token="test-only-web-presentation-token"
 cdp_authorization="Bearer test-only-remote-cdp-secret"
+rotated_cdp_authorization="Bearer rotated-test-only-cdp-secret"
 credential_ref="direct-container-session"
+material_root="/tmp/jangolova-connection-material"
+credential_path="${material_root}/credential/${credential_ref}.json"
+relay_authorization_path="/tmp/jangolova-cdp-authorization"
 
 Xvfb "${DISPLAY}" -screen 0 1280x720x24 -ac +extension GLX +render -noreset > /tmp/jangolova-presentation-xvfb.log 2>&1 &
 xvfb_pid=$!
@@ -31,12 +35,14 @@ chromium \
   --user-data-dir="${profile_path}" \
   about:blank > "${target_log}" 2>&1 &
 target_pid=$!
-CDP_AUTHORIZATION="${cdp_authorization}" node tests/authenticated-cdp-relay.mjs > "${relay_log}" 2>&1 &
+mkdir -p "${material_root}/credential"
+printf '%s\n' "${cdp_authorization}" > "${relay_authorization_path}"
+CDP_AUTHORIZATION_FILE="${relay_authorization_path}" node tests/authenticated-cdp-relay.mjs > "${relay_log}" 2>&1 &
 relay_pid=$!
-credential_expires_at="$(node -e 'process.stdout.write(new Date(Date.now() + 300000).toISOString())')"
+credential_expires_at="$(node -e 'process.stdout.write(new Date(Date.now() + 10000).toISOString())')"
 credential_document="{\"apiVersion\":\"interaction.connection/v1alpha1\",\"kind\":\"credential\",\"headers\":{\"Authorization\":\"${cdp_authorization}\"},\"expiresAt\":\"${credential_expires_at}\"}"
-JANGOLOVA_CREDENTIAL_DIRECT_2DCONTAINER_2DSESSION="${credential_document}" \
-  JANGOLOVA_PROVIDER_TOKEN="${token}" \
+printf '%s\n' "${credential_document}" > "${credential_path}"
+JANGOLOVA_CONNECTION_MATERIAL_DIR="${material_root}" JANGOLOVA_PROVIDER_TOKEN="${token}" \
   bin/jangolova serve-engine-provider --bind 127.0.0.1:7392 > "${provider_log}" 2>&1 &
 provider_pid=$!
 
@@ -69,17 +75,24 @@ curl -fsS http://127.0.0.1:8082/ >/dev/null
 JANGOLOVA_PROVIDER_TOKEN="${token}" \
   PRESENTATION_AUTHENTICATED_CDP_BASE="ws://127.0.0.1:9333" \
   PRESENTATION_CREDENTIAL_REF="${credential_ref}" \
+  PRESENTATION_CREDENTIAL_MATERIAL_PATH="${credential_path}" \
+  PRESENTATION_RELAY_AUTHORIZATION_PATH="${relay_authorization_path}" \
+  PRESENTATION_ROTATED_AUTHORIZATION="${rotated_cdp_authorization}" \
   node tests/web-presentation-smoke-client.mjs
 if grep -F "${cdp_authorization}" "${provider_log}" >/dev/null 2>&1; then
   echo "resolved CDP credential leaked into provider logs" >&2
   exit 1
 fi
-echo "Authenticated credential-reference CDP attachment passed"
+if grep -F "${rotated_cdp_authorization}" "${provider_log}" >/dev/null 2>&1; then
+  echo "rotated CDP credential leaked into provider logs" >&2
+  exit 1
+fi
+echo "Renewable credential-reference CDP attachment passed"
 
 # Disconnecting Jangolova must not terminate the caller-owned Chromium or its
 # independently served presentation target.
 curl -fsS http://127.0.0.1:9224/json/version >/dev/null
-curl -fsS -H "Authorization: ${cdp_authorization}" http://127.0.0.1:9333/json/version >/dev/null
+curl -fsS -H "Authorization: ${rotated_cdp_authorization}" http://127.0.0.1:9333/json/version >/dev/null
 curl -fsS http://127.0.0.1:8081/ >/dev/null
 curl -fsS http://127.0.0.1:8082/ >/dev/null
 

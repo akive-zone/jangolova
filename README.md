@@ -61,6 +61,8 @@ exposes their semantic calls at `POST /v1/instances/{id}/call`.
 Connection references, expiry, private certificate authorities, and output
 redaction are documented in
 [target connection security](docs/target-connection-security.md).
+Credential leases renew HTTP requests and reconnect CDP/BiDi workers without
+replacing the interaction instance or caller-owned runtime.
 
 ## Ownership boundary
 

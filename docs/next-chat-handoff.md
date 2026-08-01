@@ -40,7 +40,11 @@ adapter connection through the deployment-neutral layer documented in
 headers never enter provider payloads or command arguments, are redacted from
 outbound errors/events/health, and are released on disconnect. The direct
 container fixture puts Chromium behind an authenticated CDP relay and proves
-the complete reference-resolution path.
+the complete reference-resolution path. Credential leases now re-resolve
+before expiry: HTTP adapters consume the current generation per request, while
+CDP/BiDi workers reconnect in place and emit
+`interaction.connection.renewed`. Live CA/client-certificate rotation remains
+separate transport work.
 
 Validation already run:
 

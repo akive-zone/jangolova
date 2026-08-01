@@ -46,6 +46,7 @@ async function handleLine(line) {
 
 async function dispatch(method, params) {
   if (method === "connect") return connect(params.endpoint, params.protocol, params.headers);
+  if (method === "reconnect") return reconnect(params.endpoint, params.protocol, params.headers);
   if (method === "disconnect") return disconnect();
   if (method === "health") return { connected: isConnected() };
   requireConnection();
@@ -67,24 +68,51 @@ async function connect(endpoint, protocol = "cdp", headers = {}) {
   if (typeof endpoint !== "string" || endpoint.length === 0) {
     throw new Error("caller-owned browser endpoint is required");
   }
+  browser = await openBrowser(endpoint, protocol, headers);
+  observeBrowser(browser);
+  appendEvent("browser.connected", { adapter, protocol });
+  return { capabilities: capabilities.map((item) => item.name) };
+}
+
+async function reconnect(endpoint, protocol = "cdp", headers = {}) {
+  requireConnection();
+  const previous = browser;
+  const replacement = await openBrowser(endpoint, protocol, headers);
+  browser = replacement;
+  disconnected = false;
+  observeBrowser(replacement);
+  await disconnectBrowser(previous).catch(() => {});
+  appendEvent("browser.connection.renewed", { adapter, protocol });
+  return { reconnected: true };
+}
+
+async function openBrowser(endpoint, protocol, headers) {
   if (adapter === "playwright") {
     if (protocol !== "cdp") throw new Error("Playwright attachment currently requires CDP");
     const { chromium } = await import("playwright-core");
-    browser = await chromium.connectOverCDP(endpoint, { headers: safeHeaders(headers) });
+    return chromium.connectOverCDP(endpoint, { headers: safeHeaders(headers) });
   } else {
     const { default: puppeteer } = await import("puppeteer-core");
     const connectionEndpoint = protocol === "cdp" ? await resolveCDPEndpoint(endpoint, headers) : endpoint;
     const option = protocol === "webdriver-bidi"
       ? { browserWSEndpoint: connectionEndpoint, protocol: "webDriverBiDi", headers: safeHeaders(headers) }
       : { browserWSEndpoint: connectionEndpoint, protocol: "cdp", headers: safeHeaders(headers) };
-    browser = await puppeteer.connect(option);
+    return puppeteer.connect(option);
   }
-  browser.on("disconnected", () => {
+}
+
+function observeBrowser(candidate) {
+  candidate.on("disconnected", () => {
+    if (browser !== candidate) return;
     disconnected = true;
     appendEvent("browser.disconnected", {});
   });
-  appendEvent("browser.connected", { adapter, protocol });
-  return { capabilities: capabilities.map((item) => item.name) };
+}
+
+async function disconnectBrowser(candidate) {
+  if (!candidate) return;
+  if (adapter === "puppeteer" && candidate.disconnect) candidate.disconnect();
+  if (adapter === "playwright" && candidate.close) await candidate.close();
 }
 
 async function resolveCDPEndpoint(endpoint, headers) {
@@ -107,7 +135,7 @@ function safeHeaders(value) {
 }
 
 async function disconnect() {
-  if (adapter === "puppeteer" && browser?.disconnect) browser.disconnect();
+  await disconnectBrowser(browser);
   disconnected = true;
   return { disconnected: true };
 }
