@@ -369,7 +369,7 @@ func resolveWorker(configured string) (string, error) {
 	return "", errors.New("web presentation worker not found; set JANGOLOVA_PRESENTATION_WORKER")
 }
 func capabilityNames() []string {
-	return []string{"act", "capabilities", "describe", "events", "presentation.activate", "presentation.capture", "presentation.create", "presentation.describe", "presentation.execute", "presentation.patch", "presentation.replace", "presentation.write", "target.cdp"}
+	return []string{"act", "artifact.kind.web.entrypoint", "artifact.transport.http", "artifact.transport.https", "artifact.transport.target-file", "capabilities", "describe", "events", "presentation.activate", "presentation.capture", "presentation.create", "presentation.describe", "presentation.execute", "presentation.mount", "presentation.patch", "presentation.replace", "presentation.write", "target.cdp"}
 }
 func stableStrings(values []string) []string {
 	seen := make(map[string]struct{}, len(values))
@@ -398,7 +398,7 @@ func sensitiveActionName(method string, params json.RawMessage) string {
 	if err := json.Unmarshal(params, &call); err != nil {
 		return ""
 	}
-	if call.Name == "presentation.capture" || call.Name == "presentation.execute" {
+	if call.Name == "presentation.capture" || call.Name == "presentation.execute" || call.Name == "presentation.mount" {
 		return call.Name
 	}
 	return ""
@@ -410,6 +410,8 @@ func (p presentationPolicy) actionTimeout(action string) time.Duration {
 		return time.Duration(p.ExecuteTimeoutMillis) * time.Millisecond
 	case "presentation.capture":
 		return time.Duration(p.CaptureTimeoutMillis) * time.Millisecond
+	case "presentation.mount":
+		return time.Duration(p.MountTimeoutMillis) * time.Millisecond
 	default:
 		return 0
 	}

@@ -7,6 +7,8 @@ let page;
 let cdpSession;
 let disconnected = false;
 let activePolicy = {};
+let assetPolicy;
+const supportedArtifactTransports = new Set(["http", "https", "target-file"]);
 const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 let chain = Promise.resolve();
 lines.on("line", (line) => { chain = chain.then(() => handleLine(line)).catch((error) => console.error(error?.stack || String(error))); });
@@ -30,6 +32,9 @@ async function dispatch(method, params) {
   if (method === "capabilities") return page.evaluate(() => window.jangolova?.capabilities?.() || []);
   if (method === "describe") return page.evaluate(() => window.jangolova?.describe?.() || null);
   if (method === "act") {
+    if (params.name === "presentation.mount") {
+      return withActionTimeout("presentation.mount", activePolicy.mountTimeoutMillis, () => mountArtifact(params.input || {}));
+    }
     if (params.name === "presentation.capture") {
       return withActionTimeout("presentation.capture", activePolicy.captureTimeoutMillis, () => (
         page.screenshot({ encoding: "base64", fullPage: Boolean(params.input?.fullPage) })
@@ -56,7 +61,7 @@ async function connect(endpoint, source, policy = {}) {
   const pages = await browser.pages();
   page = pages.at(-1) || await browser.newPage();
   cdpSession = await page.target().createCDPSession();
-  await installAssetPolicy(page, policy.allowedAssetOrigins, source || page.url());
+  assetPolicy = await installAssetPolicy(page, policy.allowedAssetOrigins, source || page.url());
   if (typeof source === "string" && source.trim()) await page.goto(source, { waitUntil: "domcontentloaded" });
   const ready = await page.evaluate(() => Boolean(window.jangolova && typeof window.jangolova.act === "function"));
   if (!ready) throw new Error("active page does not expose window.jangolova presentation bridge");
@@ -65,8 +70,59 @@ async function connect(endpoint, source, policy = {}) {
 }
 
 async function disconnect() { if (cdpSession?.detach) await cdpSession.detach().catch(() => {}); if (browser?.disconnect) browser.disconnect(); disconnected = true; return { disconnected: true }; }
+async function mountArtifact(input) {
+  const currentStateRevision = await readStateRevision();
+  if (input.expectedStateRevision === undefined || input.expectedStateRevision === null) throw new Error("presentation.mount expectedStateRevision is required");
+  if (String(input.expectedStateRevision) !== currentStateRevision) {
+    throw new Error(`presentation state revision conflict: expected ${input.expectedStateRevision}, current ${currentStateRevision}`);
+  }
+  const artifact = input.artifact;
+  if (!artifact || artifact.apiVersion !== "interaction.presentation/v1alpha1") throw new Error("presentation.mount requires an interaction.presentation/v1alpha1 artifact");
+  if (artifact.kind !== "web.entrypoint") throw new Error(`web presentation does not support artifact kind ${JSON.stringify(artifact.kind)}`);
+  const allowedTransports = Array.isArray(activePolicy.allowedArtifactTransports) && activePolicy.allowedArtifactTransports.length > 0
+    ? activePolicy.allowedArtifactTransports
+    : ["http", "https"];
+  const location = (artifact.locations || []).find((candidate) => (
+    candidate && supportedArtifactTransports.has(candidate.transport) && allowedTransports.includes(candidate.transport) && locationMatchesTransport(candidate) && locationAllowedBySourcePolicy(candidate)
+  ));
+  if (!location) throw new Error("presentation artifact has no supported allowed location");
+
+  const previousOrigin = assetPolicy?.selfOrigin() || "";
+  assetPolicy?.setSelfOrigin(location.uri);
+  try {
+    await page.goto(location.uri, { waitUntil: "domcontentloaded" });
+    const ready = await page.evaluate(() => Boolean(window.jangolova && typeof window.jangolova.act === "function"));
+    if (!ready) throw new Error("mounted artifact does not expose window.jangolova presentation bridge");
+  } catch (error) {
+    assetPolicy?.setSelfOrigin(previousOrigin);
+    throw error;
+  }
+  return {
+    ok: true,
+    artifactId: artifact.artifactId,
+    artifactRevision: artifact.revision,
+    stateRevision: await readStateRevision(),
+    location: { transport: location.transport },
+  };
+}
+async function readStateRevision() {
+  const description = await page.evaluate(() => window.jangolova?.describe?.() || null);
+  const revision = description?.stateRevision ?? description?.revision;
+  return revision === undefined || revision === null ? "0" : String(revision);
+}
+function locationMatchesTransport(location) {
+  try {
+    const scheme = new URL(location.uri).protocol;
+    return (location.transport === "target-file" && scheme === "file:") || scheme === `${location.transport}:`;
+  } catch { return false; }
+}
+function locationAllowedBySourcePolicy(location) {
+  if (location.transport === "target-file") return true;
+  const allowedOrigins = Array.isArray(activePolicy.allowedSourceOrigins) ? activePolicy.allowedSourceOrigins : [];
+  return allowedOrigins.length === 0 || allowedOrigins.includes(originOf(location.uri));
+}
 async function withActionTimeout(action, timeoutMillis, operation) {
-  const timeout = Number(timeoutMillis) > 0 ? Number(timeoutMillis) : (action === "presentation.capture" ? 10000 : 5000);
+  const timeout = Number(timeoutMillis) > 0 ? Number(timeoutMillis) : (action === "presentation.capture" ? 10000 : action === "presentation.mount" ? 15000 : 5000);
   let timer;
   let timedOut = false;
   const operationPromise = Promise.resolve().then(operation);
@@ -74,6 +130,7 @@ async function withActionTimeout(action, timeoutMillis, operation) {
     timer = setTimeout(() => {
       timedOut = true;
       if (action === "presentation.execute") terminateExecution().catch(() => {});
+      if (action === "presentation.mount") stopLoading().catch(() => {});
       reject(new Error(`${action} timed out after ${timeout}ms`));
     }, timeout);
   });
@@ -87,9 +144,12 @@ async function withActionTimeout(action, timeoutMillis, operation) {
 async function terminateExecution() {
   if (cdpSession?.send) await cdpSession.send("Runtime.terminateExecution");
 }
+async function stopLoading() {
+  if (cdpSession?.send) await cdpSession.send("Page.stopLoading");
+}
 async function installAssetPolicy(targetPage, configuredRules, source) {
   const rules = Array.isArray(configuredRules) && configuredRules.length > 0 ? configuredRules : ["self", "data:", "blob:"];
-  const selfOrigin = originOf(source);
+  let selfOrigin = originOf(source);
   await targetPage.setBypassServiceWorker(true);
   await targetPage.setCacheEnabled(false);
   targetPage.on("request", (request) => {
@@ -97,6 +157,10 @@ async function installAssetPolicy(targetPage, configuredRules, source) {
     else request.abort("blockedbyclient").catch(() => {});
   });
   await targetPage.setRequestInterception(true);
+  return {
+    selfOrigin: () => selfOrigin,
+    setSelfOrigin: (value) => { selfOrigin = originOf(value) || value; },
+  };
 }
 function isAssetAllowed(value, rules, selfOrigin) {
   if (value.startsWith("about:") || value.startsWith("chrome:") || value.startsWith("devtools:")) return true;

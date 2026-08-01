@@ -18,6 +18,7 @@ Implemented operations:
 - `presentation.create` and `presentation.replace` for structured documents or
   HTML-source documents;
 - `presentation.write` for `{html, css, js}` source;
+- `presentation.mount` for provider-neutral, versioned artifact references;
 - `presentation.execute` for incremental JavaScript;
 - `presentation.patch` with bounded `set`, `remove`, and `append` operations;
 - `presentation.describe`, `presentation.activate`, and `presentation.capture`;
@@ -26,6 +27,12 @@ Implemented operations:
 The adapter is registered as `web-presentation` and is discoverable through
 `jangolova engines --json`. The provider handoff is documented in
 [presentation-provider.md](presentation-provider.md).
+
+The engine provider also accepts the formal
+`interaction.target/v1alpha1` descriptor and `engine.adapter: "auto"`.
+Automatic selection uses endpoint protocols and required capabilities only;
+native, container, VM, remote, and Xallet-owned targets share the same path.
+See [target-descriptor.md](target-descriptor.md).
 
 Validation already run:
 
@@ -44,16 +51,21 @@ remain alive. Connected capability discovery also retains the provider's
 common `describe`, `act`, and `events` methods alongside page-declared actions.
 It also verifies source and asset-origin policy, bounded inline artifacts, and
 optimistic revisions by rejecting a stale write without changing the surface.
+The same test is a direct-container conformance fixture: its supervisor owns
+Xvfb, Chromium, two localhost artifact origins, and Jangolova. It mounts an
+artifact between origins, separates immutable `artifactRevision` from live
+`stateRevision`, and requires no Xallet API or identifier.
 Sensitive presentation actions are now policy-gated through
 `authorizedActions`, bounded by `executeTimeoutMillis` and
-`captureTimeoutMillis`, and audited through provider instance events such as
+`captureTimeoutMillis`/`mountTimeoutMillis`, and audited through provider instance events such as
 `presentation.execute.requested`, `.succeeded`, `.denied`, `.failed`, and
 `.cancelled`.
 
 ## Important boundary
 
 Jangolova owns presentation definitions, generated source, semantic actions,
-events, and engine integrations. Xallet or the native host owns:
+events, the provider-neutral artifact contract, and engine integrations. The
+target provider—Xallet, a native host, or a direct-container supervisor—owns:
 
 - serving the HTML/JS assets or presentation URL;
 - Chromium, Firefox, WebKit, Unity, Unreal, or other runtime processes;

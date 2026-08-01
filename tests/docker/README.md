@@ -17,7 +17,7 @@ test-owned Chromium and Xvfb:
 docker compose -f tests/docker/compose.yaml run --rm engine-test
 ```
 
-Run only the authored-presentation smoke test:
+Run the direct-container presentation conformance test:
 
 ```bash
 docker compose -f tests/docker/compose.yaml run --rm \
@@ -48,6 +48,13 @@ docker compose -f tests/docker/compose.yaml run --rm \
   --entrypoint tests/docker/unity-package-contract-test.sh \
   engine-test
 ```
+
+The presentation fixture co-locates test-owned Xvfb, Chromium, local artifact
+servers, and Jangolova to prove the direct-container mode without Xallet. It
+supplies Chromium through the generic target descriptor, lets Jangolova select
+the presentation engine from the CDP protocol and required capabilities,
+mounts a versioned artifact between two localhost origins, verifies state and
+artifact revisions, and leaves the target components alive after disconnect.
 
 The fixtures launch Chromium, Firefox, or WebKitGTK directly, give only the
 source URL, CDP, WebDriver BiDi, or existing WebDriver-session coordinates to

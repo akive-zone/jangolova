@@ -9,6 +9,7 @@ import (
 )
 
 const APIVersion = "interaction.engine/v1alpha1"
+const TargetAPIVersion = "interaction.target/v1alpha1"
 
 type EngineDescriptor struct {
 	Adapter      string   `json:"adapter"`
@@ -18,21 +19,29 @@ type EngineDescriptor struct {
 }
 
 type EngineSpec struct {
-	Adapter string          `json:"adapter"`
-	Source  string          `json:"source,omitempty"`
-	Options json.RawMessage `json:"options,omitempty"`
+	Adapter              string          `json:"adapter"`
+	RequiredCapabilities []string        `json:"requiredCapabilities,omitempty"`
+	Source               string          `json:"source,omitempty"`
+	Options              json.RawMessage `json:"options,omitempty"`
 }
 
 type TargetEndpoint struct {
-	Name     string `json:"name"`
-	Protocol string `json:"protocol"`
-	URL      string `json:"url"`
+	Name          string            `json:"name"`
+	Protocol      string            `json:"protocol"`
+	URL           string            `json:"url"`
+	CredentialRef string            `json:"credentialRef,omitempty"`
+	TLSRef        string            `json:"tlsRef,omitempty"`
+	Audience      string            `json:"audience,omitempty"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
 }
 
 type Target struct {
-	Kind      string            `json:"kind"`
-	Endpoints []TargetEndpoint  `json:"endpoints,omitempty"`
-	Handles   map[string]string `json:"handles,omitempty"`
+	APIVersion string            `json:"apiVersion,omitempty"`
+	TargetID   string            `json:"targetId,omitempty"`
+	Kind       string            `json:"kind"`
+	Endpoints  []TargetEndpoint  `json:"endpoints,omitempty"`
+	Handles    map[string]string `json:"handles,omitempty"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
 type ConnectRequest struct {

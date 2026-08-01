@@ -15,18 +15,25 @@ import (
 )
 
 type fakeEngineAdapter struct {
-	target   orchestrator.EngineTarget
-	instance *fakeEngineInstance
+	target       orchestrator.EngineTarget
+	spec         manifest.EngineSpec
+	instance     *fakeEngineInstance
+	capabilities []string
 }
 
 func (f *fakeEngineAdapter) Connect(
 	_ context.Context,
-	_ manifest.EngineSpec,
+	spec manifest.EngineSpec,
 	target orchestrator.EngineTarget,
 ) (orchestrator.EngineInstance, error) {
+	f.spec = spec
 	f.target = target
 	f.instance = &fakeEngineInstance{events: make(chan orchestrator.EngineEvent, 4)}
 	return f.instance, nil
+}
+
+func (f *fakeEngineAdapter) InspectEngine(context.Context) orchestrator.EngineInspection {
+	return orchestrator.EngineInspection{Available: true, Capabilities: append([]string(nil), f.capabilities...)}
 }
 
 type fakeEngineInstance struct {
@@ -153,6 +160,90 @@ func TestServiceRequiresAuthorization(t *testing.T) {
 	service.Routes().ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", response.Code)
+	}
+}
+
+func TestServiceAutomaticallySelectsEngineFromCallerSuppliedTarget(t *testing.T) {
+	registry := orchestrator.NewRegistry()
+	playwright := &fakeEngineAdapter{capabilities: []string{"target.cdp", "browser.evaluate"}}
+	presentation := &fakeEngineAdapter{capabilities: []string{"target.cdp", "presentation.mount"}}
+	if err := registry.RegisterEngine("playwright", playwright); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterEngine("web-presentation", presentation); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(registry, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := performRequest(service.Routes(), http.MethodPost, "/v1/instances", `{
+		"apiVersion":"interaction.engine/v1alpha1",
+		"instanceId":"remote-presentation",
+		"engine":{"adapter":"auto","requiredCapabilities":["presentation.mount"]},
+		"target":{
+			"apiVersion":"interaction.target/v1alpha1",
+			"targetId":"remote-browser-42",
+			"kind":"browser",
+			"endpoints":[{
+				"name":"browser-control",
+				"protocol":"cdp",
+				"url":"wss://browser.example/control/42",
+				"credentialRef":"browser-session-42",
+				"tlsRef":"browser-cluster-ca",
+				"audience":"engine",
+				"metadata":{"network.scope":"private"}
+			}],
+			"metadata":{"owner.kind":"external"}
+		}
+	}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("connect status = %d: %s", response.Code, response.Body.String())
+	}
+	var connected Instance
+	if err := json.NewDecoder(response.Body).Decode(&connected); err != nil {
+		t.Fatal(err)
+	}
+	if connected.Adapter != "web-presentation" {
+		t.Fatalf("selected adapter = %q", connected.Adapter)
+	}
+	if playwright.instance != nil {
+		t.Fatal("non-matching engine was connected")
+	}
+	if presentation.spec.Adapter != "web-presentation" || len(presentation.spec.RequiredCapabilities) != 1 {
+		t.Fatalf("selected spec = %#v", presentation.spec)
+	}
+	if presentation.target.TargetID != "remote-browser-42" || presentation.target.APIVersion != TargetAPIVersion {
+		t.Fatalf("target identity = %#v", presentation.target)
+	}
+	endpoint := presentation.target.Endpoints[0]
+	if endpoint.URL != "wss://browser.example/control/42" || endpoint.CredentialRef != "browser-session-42" || endpoint.TLSRef != "browser-cluster-ca" || endpoint.Metadata["network.scope"] != "private" {
+		t.Fatalf("forwarded endpoint = %#v", endpoint)
+	}
+}
+
+func TestAutomaticSelectionDoesNotDependOnTargetLocation(t *testing.T) {
+	registry := orchestrator.NewRegistry()
+	adapter := &fakeEngineAdapter{capabilities: []string{"target.cdp", "browser.evaluate"}}
+	if err := registry.RegisterEngine("playwright", adapter); err != nil {
+		t.Fatal(err)
+	}
+	for _, endpointURL := range []string{
+		"http://127.0.0.1:9222",
+		"http://chromium:9222",
+		"http://10.30.0.14:9222",
+		"wss://browser.remote.example/control",
+	} {
+		selected, err := SelectAutomaticEngine(context.Background(), registry, Target{
+			Kind:      "browser",
+			Endpoints: []TargetEndpoint{{Name: "control", Protocol: "cdp", URL: endpointURL}},
+		}, nil)
+		if err != nil {
+			t.Fatalf("select %s: %v", endpointURL, err)
+		}
+		if selected != "playwright" {
+			t.Fatalf("select %s = %q", endpointURL, selected)
+		}
 	}
 }
 

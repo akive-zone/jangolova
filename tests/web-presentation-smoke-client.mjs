@@ -41,7 +41,8 @@ const { value: connected } = await request("/v1/instances", {
     apiVersion: "interaction.engine/v1alpha1",
     instanceId: instanceID,
     engine: {
-      adapter: "web-presentation",
+      adapter: "auto",
+      requiredCapabilities: ["presentation.mount"],
       source: sourceURL,
       options: {
         policy: {
@@ -49,38 +50,50 @@ const { value: connected } = await request("/v1/instances", {
           maxCSSBytes: 2048,
           maxJavaScriptBytes: 2048,
           maxTotalBytes: 8192,
-          allowedSourceOrigins: ["http://127.0.0.1:8081"],
+          allowedSourceOrigins: ["http://127.0.0.1:8081", "http://127.0.0.1:8082"],
           allowedAssetOrigins: ["self"],
+          allowedArtifactTransports: ["http"],
         },
       },
     },
     target: {
+      apiVersion: "interaction.target/v1alpha1",
+      targetId: "direct-container-chromium",
       kind: "browser",
-      endpoints: [{ name: "cdp", protocol: "cdp", url: cdpURL }],
+      endpoints: [{
+        name: "cdp",
+        protocol: "cdp",
+        url: cdpURL,
+        audience: "engine",
+        metadata: { "network.scope": "container-private" },
+      }],
+      metadata: { "owner.kind": "container-supervisor" },
     },
   },
 });
 assert.equal(connected.status, "connected");
-for (const capability of ["presentation.write", "presentation.capture", "events"]) {
+assert.equal(connected.adapter, "web-presentation");
+for (const capability of ["presentation.write", "presentation.mount", "artifact.kind.web.entrypoint", "artifact.transport.http", "presentation.capture", "events"]) {
   assert.ok(connected.capabilities.includes(capability), `missing ${capability}`);
 }
 
 const write = await call("act", {
   name: "presentation.write",
   input: {
-    expectedRevision: "0",
+    expectedStateRevision: "0",
     html: '<article id="authored-card"><h1>Authored live</h1><button id="advance">Advance</button><img id="blocked-asset" src="http://127.0.0.1:8082/pixel.svg" alt=""></article>',
     css: "#authored-card { width: 420px; padding: 24px; background: rgb(20, 40, 80); }",
     js: "root.querySelector('#advance').addEventListener('click', () => emit('advance.clicked', { step: 2 }));",
   },
 });
 assert.equal(write.ok, true);
-assert.equal(write.revision, "1");
+assert.equal(write.stateRevision, "1");
+assert.equal("document" in write, false, "mutation receipt must not echo the presentation document");
 
 await assert.rejects(
   call("act", {
     name: "presentation.write",
-    input: { expectedRevision: "0", html: "<p>stale overwrite</p>" },
+    input: { expectedStateRevision: "0", html: "<p>stale overwrite</p>" },
   }),
   /revision conflict/,
 );
@@ -117,7 +130,40 @@ const png = Buffer.from(capture.pngBase64, "base64");
 assert.ok(png.length > 1000, `PNG is unexpectedly small: ${png.length} bytes`);
 assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
 
+const mounted = await call("act", {
+  name: "presentation.mount",
+  input: {
+    expectedStateRevision: "1",
+    artifact: {
+      apiVersion: "interaction.presentation/v1alpha1",
+      artifactId: "direct-container-experience",
+      revision: "sha256:fixture-v2",
+      kind: "web.entrypoint",
+      locations: [
+        { transport: "provider-handle", uri: "artifact://fixture/experience" },
+        { transport: "http", uri: "http://127.0.0.1:8082/", audience: "target" },
+      ],
+    },
+  },
+});
+assert.deepEqual(mounted, {
+  ok: true,
+  artifactId: "direct-container-experience",
+  artifactRevision: "sha256:fixture-v2",
+  stateRevision: "0",
+  location: { transport: "http" },
+});
+
+const mountedWrite = await call("act", {
+  name: "presentation.write",
+  input: {
+    expectedStateRevision: "0",
+    html: "<h1>Mounted in a direct container</h1>",
+  },
+});
+assert.equal(mountedWrite.stateRevision, "1");
+
 const disconnected = await request(`/v1/instances/${instanceID}`, { method: "DELETE" });
 assert.equal(disconnected.status, 204);
 
-process.stdout.write("Authored presentation policy, revision, DOM, event, capture, and disconnect checks passed\n");
+process.stdout.write("Direct-container artifact mount, policy, revision, DOM, capture, and disconnect checks passed\n");

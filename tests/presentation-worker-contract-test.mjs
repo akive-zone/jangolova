@@ -11,15 +11,17 @@ test("presentation worker attaches through Puppeteer CDP and never launches a ru
   assert.match(source, /allowedAssetOrigins/);
   assert.match(source, /withActionTimeout/);
   assert.match(source, /Runtime\.terminateExecution/);
+  assert.match(source, /presentation\.mount/);
+  assert.match(source, /supportedArtifactTransports/);
   assert.doesNotMatch(source, /puppeteer\.launch/);
 });
 
-test("web presentation host exposes declarative create, patch, and semantic activation", async () => {
+test("web presentation host exposes declarative create, patch, artifact, and semantic activation", async () => {
   const source = await readFile(new URL("../examples/web-presentation/main.js", import.meta.url), "utf8");
-  for (const capability of ["presentation.create", "presentation.replace", "presentation.write", "presentation.execute", "presentation.patch", "presentation.describe", "presentation.activate"]) {
+  for (const capability of ["presentation.create", "presentation.replace", "presentation.write", "presentation.mount", "presentation.execute", "presentation.patch", "presentation.describe", "presentation.activate"]) {
     assert.match(source, new RegExp(capability.replaceAll(".", "\\.")));
   }
   assert.match(source, /window\.jangolova/);
-  assert.match(source, /expectedRevision/);
-  assert.match(source, /revision conflict/);
+  assert.match(source, /expectedStateRevision/);
+  assert.match(source, /state revision conflict/);
 });

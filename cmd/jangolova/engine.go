@@ -54,7 +54,7 @@ func enginesCommand(args []string) error {
 func connectEngineCommand(args []string) error {
 	flags := flag.NewFlagSet("connect-engine", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	adapterName := flags.String("adapter", "", "interaction-engine adapter name")
+	adapterName := flags.String("adapter", "auto", "interaction-engine adapter name or auto")
 	targetKind := flags.String("target-kind", "", "caller-owned target kind")
 	source := flags.String("source", "", "optional resource to present after connecting")
 	optionsText := flags.String("options", "{}", "engine-specific options as a JSON object")
@@ -63,14 +63,13 @@ func connectEngineCommand(args []string) error {
 	flags.Var(&endpoints, "endpoint", "caller-owned target endpoint in PROTOCOL=URL form; may be repeated")
 	var handles handleFlags
 	flags.Var(&handles, "handle", "opaque caller-owned target handle in NAME=VALUE form; may be repeated")
+	var requiredCapabilities stringFlags
+	flags.Var(&requiredCapabilities, "require-capability", "capability required when selecting an adapter; may be repeated")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return errors.New("connect-engine accepts flags only")
-	}
-	if strings.TrimSpace(*adapterName) == "" {
-		return errors.New("--adapter is required")
 	}
 	if strings.TrimSpace(*targetKind) == "" {
 		return errors.New("--target-kind is required")
@@ -86,17 +85,33 @@ func connectEngineCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	adapter, ok := registry.Engine(strings.TrimSpace(*adapterName))
+	selectedAdapter := strings.TrimSpace(*adapterName)
+	if selectedAdapter == "auto" {
+		providerEndpoints := make([]engineprovider.TargetEndpoint, 0, len(endpoints))
+		for _, endpoint := range endpoints {
+			providerEndpoints = append(providerEndpoints, engineprovider.TargetEndpoint{
+				Name: endpoint.Name, Protocol: endpoint.Protocol, URL: endpoint.URL,
+			})
+		}
+		selectedAdapter, err = engineprovider.SelectAutomaticEngine(context.Background(), registry, engineprovider.Target{
+			Kind: strings.TrimSpace(*targetKind), Endpoints: providerEndpoints,
+		}, requiredCapabilities)
+		if err != nil {
+			return err
+		}
+	}
+	adapter, ok := registry.Engine(selectedAdapter)
 	if !ok {
-		return fmt.Errorf("interaction engine %q is not registered", *adapterName)
+		return fmt.Errorf("interaction engine %q is not registered", selectedAdapter)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	instance, err := adapter.Connect(ctx, manifest.EngineSpec{
-		Adapter: strings.TrimSpace(*adapterName),
-		Source:  strings.TrimSpace(*source),
-		Options: options,
+		Adapter:              selectedAdapter,
+		RequiredCapabilities: append([]string(nil), requiredCapabilities...),
+		Source:               strings.TrimSpace(*source),
+		Options:              options,
 	}, orchestrator.EngineTarget{
 		Kind:      strings.TrimSpace(*targetKind),
 		Endpoints: endpoints.clone(),
@@ -122,7 +137,7 @@ func connectEngineCommand(args []string) error {
 	result := engineprovider.Instance{
 		APIVersion: engineprovider.APIVersion,
 		InstanceID: "standalone",
-		Adapter:    strings.TrimSpace(*adapterName),
+		Adapter:    selectedAdapter,
 		Status:     "connected",
 		Health: engineprovider.Health{
 			Status: health.Status, Message: health.Message, ObservedAt: health.ObservedAt,
@@ -187,6 +202,18 @@ func decodeEngineOptions(value string) (json.RawMessage, error) {
 var handleFlagNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._-]{0,127}$`)
 
 type endpointFlags []orchestrator.TargetEndpoint
+
+type stringFlags []string
+
+func (s *stringFlags) String() string { return strings.Join(*s, ",") }
+func (s *stringFlags) Set(value string) error {
+	value = strings.TrimSpace(value)
+	if !handleFlagNamePattern.MatchString(value) {
+		return errors.New("capability must use a protocol-style name")
+	}
+	*s = append(*s, value)
+	return nil
+}
 
 func (e *endpointFlags) String() string { return fmt.Sprint([]orchestrator.TargetEndpoint(*e)) }
 

@@ -7,6 +7,9 @@
 - [x] Make disconnect target-preserving.
 - [x] Add a repository boundary test against target provisioning.
 - [x] Keep native-host, independent-container, and Xallet-managed operation.
+- [x] Define a provider-neutral caller-supplied target descriptor.
+- [x] Select interaction engines automatically from protocols and required
+  capabilities without using target location.
 
 ## Phase 2: Browser interaction engines
 
@@ -37,6 +40,8 @@
 - [x] Add a live Chromium authored-presentation smoke test and verify
   target-preserving disconnect.
 - [x] Define artifact size, origin, revision, and asset-loading policy.
+- [x] Add provider-neutral artifact references and `presentation.mount`.
+- [x] Verify artifact mounting in a direct-container target without Xallet.
 - [x] Add authorization, audit, timeout, and cancellation hooks for authored
   JavaScript execution.
 - [ ] Expose Unity bridge attachment through the interaction provider.

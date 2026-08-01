@@ -77,6 +77,7 @@ targets solely to verify attachment portability.
 See [Architecture](docs/architecture.md), [Interaction provider](docs/engine-provider.md),
 [Deployment modes](docs/deployment-modes.md), [Bridge protocol](docs/bridge-protocol.md),
 [interface creation and operation](docs/interface-model.md),
+[caller-supplied targets](docs/target-descriptor.md),
 [browser target protocols](docs/browser-target-protocols.md), and
 [Xallet boundary](docs/xallet-boundary.md).
 

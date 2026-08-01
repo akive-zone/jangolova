@@ -13,39 +13,45 @@ const maximumConfigurableArtifactBytes = 32 * 1024 * 1024
 const maximumActionTimeoutMillis = 120000
 
 type policyConfig struct {
-	MaxHTMLBytes         int      `json:"maxHTMLBytes,omitempty"`
-	MaxCSSBytes          int      `json:"maxCSSBytes,omitempty"`
-	MaxJavaScriptBytes   int      `json:"maxJavaScriptBytes,omitempty"`
-	MaxTotalBytes        int      `json:"maxTotalBytes,omitempty"`
-	AllowedSourceOrigins []string `json:"allowedSourceOrigins,omitempty"`
-	AllowedAssetOrigins  []string `json:"allowedAssetOrigins,omitempty"`
-	AuthorizedActions    []string `json:"authorizedActions,omitempty"`
-	ExecuteTimeoutMillis int      `json:"executeTimeoutMillis,omitempty"`
-	CaptureTimeoutMillis int      `json:"captureTimeoutMillis,omitempty"`
+	MaxHTMLBytes              int      `json:"maxHTMLBytes,omitempty"`
+	MaxCSSBytes               int      `json:"maxCSSBytes,omitempty"`
+	MaxJavaScriptBytes        int      `json:"maxJavaScriptBytes,omitempty"`
+	MaxTotalBytes             int      `json:"maxTotalBytes,omitempty"`
+	AllowedSourceOrigins      []string `json:"allowedSourceOrigins,omitempty"`
+	AllowedAssetOrigins       []string `json:"allowedAssetOrigins,omitempty"`
+	AllowedArtifactTransports []string `json:"allowedArtifactTransports,omitempty"`
+	AuthorizedActions         []string `json:"authorizedActions,omitempty"`
+	ExecuteTimeoutMillis      int      `json:"executeTimeoutMillis,omitempty"`
+	CaptureTimeoutMillis      int      `json:"captureTimeoutMillis,omitempty"`
+	MountTimeoutMillis        int      `json:"mountTimeoutMillis,omitempty"`
 }
 
 type presentationPolicy struct {
-	MaxHTMLBytes         int      `json:"maxHTMLBytes"`
-	MaxCSSBytes          int      `json:"maxCSSBytes"`
-	MaxJavaScriptBytes   int      `json:"maxJavaScriptBytes"`
-	MaxTotalBytes        int      `json:"maxTotalBytes"`
-	AllowedSourceOrigins []string `json:"allowedSourceOrigins,omitempty"`
-	AllowedAssetOrigins  []string `json:"allowedAssetOrigins"`
-	AuthorizedActions    []string `json:"authorizedActions"`
-	ExecuteTimeoutMillis int      `json:"executeTimeoutMillis"`
-	CaptureTimeoutMillis int      `json:"captureTimeoutMillis"`
+	MaxHTMLBytes              int      `json:"maxHTMLBytes"`
+	MaxCSSBytes               int      `json:"maxCSSBytes"`
+	MaxJavaScriptBytes        int      `json:"maxJavaScriptBytes"`
+	MaxTotalBytes             int      `json:"maxTotalBytes"`
+	AllowedSourceOrigins      []string `json:"allowedSourceOrigins,omitempty"`
+	AllowedAssetOrigins       []string `json:"allowedAssetOrigins"`
+	AllowedArtifactTransports []string `json:"allowedArtifactTransports"`
+	AuthorizedActions         []string `json:"authorizedActions"`
+	ExecuteTimeoutMillis      int      `json:"executeTimeoutMillis"`
+	CaptureTimeoutMillis      int      `json:"captureTimeoutMillis"`
+	MountTimeoutMillis        int      `json:"mountTimeoutMillis"`
 }
 
 func defaultPresentationPolicy() presentationPolicy {
 	return presentationPolicy{
-		MaxHTMLBytes:         1024 * 1024,
-		MaxCSSBytes:          256 * 1024,
-		MaxJavaScriptBytes:   256 * 1024,
-		MaxTotalBytes:        1536 * 1024,
-		AllowedAssetOrigins:  []string{"self", "data:", "blob:"},
-		AuthorizedActions:    []string{"presentation.capture", "presentation.execute"},
-		ExecuteTimeoutMillis: 5000,
-		CaptureTimeoutMillis: 10000,
+		MaxHTMLBytes:              1024 * 1024,
+		MaxCSSBytes:               256 * 1024,
+		MaxJavaScriptBytes:        256 * 1024,
+		MaxTotalBytes:             1536 * 1024,
+		AllowedAssetOrigins:       []string{"self", "data:", "blob:"},
+		AllowedArtifactTransports: []string{"http", "https"},
+		AuthorizedActions:         []string{"presentation.capture", "presentation.execute", "presentation.mount"},
+		ExecuteTimeoutMillis:      5000,
+		CaptureTimeoutMillis:      10000,
+		MountTimeoutMillis:        15000,
 	}
 }
 
@@ -80,6 +86,12 @@ func resolvePolicy(config policyConfig) (presentationPolicy, error) {
 			return presentationPolicy{}, fmt.Errorf("presentation policy allowedAssetOrigins: %w", err)
 		}
 	}
+	if len(config.AllowedArtifactTransports) > 0 {
+		policy.AllowedArtifactTransports, err = normalizeArtifactTransports(config.AllowedArtifactTransports)
+		if err != nil {
+			return presentationPolicy{}, fmt.Errorf("presentation policy allowedArtifactTransports: %w", err)
+		}
+	}
 	if config.AuthorizedActions != nil {
 		policy.AuthorizedActions, err = normalizeAuthorizedActions(config.AuthorizedActions)
 		if err != nil {
@@ -98,7 +110,27 @@ func resolvePolicy(config policyConfig) (presentationPolicy, error) {
 		}
 		policy.CaptureTimeoutMillis = config.CaptureTimeoutMillis
 	}
+	if config.MountTimeoutMillis != 0 {
+		if err := validateActionTimeout("mountTimeoutMillis", config.MountTimeoutMillis); err != nil {
+			return presentationPolicy{}, err
+		}
+		policy.MountTimeoutMillis = config.MountTimeoutMillis
+	}
 	return policy, nil
+}
+
+func normalizeArtifactTransports(values []string) ([]string, error) {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(strings.ToLower(value))
+		if value != "http" && value != "https" && value != "target-file" {
+			return nil, fmt.Errorf("unsupported web presentation artifact transport %q", value)
+		}
+		if !stringAllowed(value, result) {
+			result = append(result, value)
+		}
+	}
+	return result, nil
 }
 
 func normalizeOriginList(values []string, allowSpecial bool) ([]string, error) {
@@ -148,7 +180,7 @@ func normalizeAuthorizedActions(values []string) ([]string, error) {
 	for _, value := range values {
 		value = strings.TrimSpace(value)
 		switch value {
-		case "presentation.capture", "presentation.execute":
+		case "presentation.capture", "presentation.execute", "presentation.mount":
 		default:
 			return nil, fmt.Errorf("%q is not a sensitive presentation action", value)
 		}
@@ -169,7 +201,7 @@ func validateActionTimeout(name string, value int) error {
 }
 
 func (p presentationPolicy) actionAuthorized(name string) bool {
-	if name != "presentation.capture" && name != "presentation.execute" {
+	if name != "presentation.capture" && name != "presentation.execute" && name != "presentation.mount" {
 		return true
 	}
 	for _, allowed := range p.AuthorizedActions {
@@ -221,6 +253,8 @@ func (p presentationPolicy) validateCall(method string, params json.RawMessage) 
 		}
 	case "presentation.patch":
 		return enforceByteLimit("presentation patch", len(bytes.TrimSpace(call.Input)), p.MaxTotalBytes)
+	case "presentation.mount":
+		return p.validateArtifactMount(call.Input)
 	}
 	return nil
 }

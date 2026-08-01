@@ -5,6 +5,11 @@ Jangolova implements the authenticated, provider-neutral
 Jangolova runtime dependency, and other providers can implement the same
 contract.
 
+The caller may set `engine.adapter` to `auto` and supply a formal
+`interaction.target/v1alpha1` descriptor. Jangolova selects by protocol and
+required capabilities, never by target location. See
+[Caller-supplied interaction targets](target-descriptor.md).
+
 ```bash
 export JANGOLOVA_PROVIDER_TOKEN="a-random-session-secret"
 jangolova serve-engine-provider --bind 127.0.0.1:7391
@@ -20,7 +25,7 @@ jangolova serve-engine-provider --bind 127.0.0.1:7391
 - `GET /v1/instances/{instanceId}/events`
 - `DELETE /v1/instances/{instanceId}`
 
-Connect Playwright to Chromium that the caller already owns:
+Connect explicitly to Chromium that the caller already owns:
 
 ```json
 {
@@ -41,6 +46,11 @@ Connect Playwright to Chromium that the caller already owns:
   }
 }
 ```
+
+The legacy compact target shape above remains accepted. New integrations
+should include `target.apiVersion` and `target.targetId`. Endpoint descriptors
+may also carry opaque `credentialRef`, `tlsRef`, audience, and string metadata
+without embedding secrets.
 
 Puppeteer can instead attach to a caller-owned WebDriver BiDi endpoint:
 
@@ -75,9 +85,10 @@ serving the presentation URL, and supplying the CDP endpoint:
       "policy": {
         "allowedSourceOrigins": ["http://127.0.0.1:8080"],
         "allowedAssetOrigins": ["self"],
-        "authorizedActions": ["presentation.capture", "presentation.execute"],
+        "authorizedActions": ["presentation.capture", "presentation.execute", "presentation.mount"],
         "executeTimeoutMillis": 5000,
-        "captureTimeoutMillis": 10000
+        "captureTimeoutMillis": 10000,
+        "mountTimeoutMillis": 15000
       }
     }
   },
@@ -93,13 +104,16 @@ serving the presentation URL, and supplying the CDP endpoint:
 ```
 
 The presentation adapter does not launch Chromium, allocate a display, or
-serve files. Those responsibilities remain with Xallet or a native host.
+serve files. Those responsibilities remain with the caller's target provider,
+which may be Xallet, a native host, or a direct-container supervisor.
 Once connected, call `act` with `presentation.create` or
 `presentation.replace` for structured documents, or `presentation.write` with
 HTML/CSS/JavaScript source for a complete authored surface. Then use
 `presentation.patch`, `presentation.execute`, and `presentation.activate` for
 incremental updates. `presentation.capture` returns a PNG captured by the
-attached browser. Document mutations carry `expectedRevision`; see
+attached browser. Document mutations carry `expectedStateRevision`, while
+`presentation.mount` loads a versioned artifact from an engine-supported
+caller-supplied location. See
 [Web presentation provider handoff](presentation-provider.md) for artifact
 limits, origin policy, sensitive-action authorization, audit events, timeouts,
 and conflict behavior.

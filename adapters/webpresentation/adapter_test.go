@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -52,7 +53,7 @@ func TestInspectionFindsRepositoryWorker(t *testing.T) {
 
 func TestCapabilityNamesExposePresentationContract(t *testing.T) {
 	values := capabilityNames()
-	for _, required := range []string{"presentation.create", "presentation.replace", "presentation.write", "presentation.execute", "presentation.patch", "presentation.describe", "presentation.capture", "presentation.activate"} {
+	for _, required := range []string{"presentation.create", "presentation.replace", "presentation.write", "presentation.mount", "artifact.kind.web.entrypoint", "artifact.transport.http", "artifact.transport.target-file", "presentation.execute", "presentation.patch", "presentation.describe", "presentation.capture", "presentation.activate"} {
 		found := false
 		for _, value := range values {
 			if value == required {
@@ -90,7 +91,7 @@ func TestPresentationPolicyDefaultsAndOverrides(t *testing.T) {
 	if defaults.resolved.MaxHTMLBytes != 1024*1024 || defaults.resolved.MaxTotalBytes != 1536*1024 {
 		t.Fatalf("default policy = %#v", defaults.resolved)
 	}
-	if !defaults.resolved.actionAuthorized("presentation.execute") || !defaults.resolved.actionAuthorized("presentation.capture") {
+	if !defaults.resolved.actionAuthorized("presentation.execute") || !defaults.resolved.actionAuthorized("presentation.capture") || !defaults.resolved.actionAuthorized("presentation.mount") {
 		t.Fatalf("default sensitive action authorization = %#v", defaults.resolved.AuthorizedActions)
 	}
 
@@ -100,9 +101,11 @@ func TestPresentationPolicyDefaultsAndOverrides(t *testing.T) {
 			"maxTotalBytes": 32,
 			"allowedSourceOrigins": ["https://PRESENTATION.example/"],
 			"allowedAssetOrigins": ["self", "https://ASSETS.example", "self"],
+			"allowedArtifactTransports": ["http", "target-file", "http"],
 			"authorizedActions": ["presentation.capture"],
 			"executeTimeoutMillis": 250,
-			"captureTimeoutMillis": 500
+			"captureTimeoutMillis": 500,
+			"mountTimeoutMillis": 750
 		}
 	}`))
 	if err != nil {
@@ -117,10 +120,13 @@ func TestPresentationPolicyDefaultsAndOverrides(t *testing.T) {
 	if got := configured.resolved.AllowedAssetOrigins; len(got) != 2 || got[1] != "https://assets.example" {
 		t.Fatalf("asset origins = %v", got)
 	}
+	if got := configured.resolved.AllowedArtifactTransports; len(got) != 2 || got[1] != "target-file" {
+		t.Fatalf("artifact transports = %v", got)
+	}
 	if configured.resolved.actionAuthorized("presentation.execute") || !configured.resolved.actionAuthorized("presentation.capture") {
 		t.Fatalf("authorized actions = %v", configured.resolved.AuthorizedActions)
 	}
-	if configured.resolved.ExecuteTimeoutMillis != 250 || configured.resolved.CaptureTimeoutMillis != 500 {
+	if configured.resolved.ExecuteTimeoutMillis != 250 || configured.resolved.CaptureTimeoutMillis != 500 || configured.resolved.MountTimeoutMillis != 750 {
 		t.Fatalf("timeouts = %#v", configured.resolved)
 	}
 }
@@ -137,7 +143,7 @@ func TestPresentationPolicyRejectsDisallowedSourceAndOversizedArtifact(t *testin
 	if err := policy.validateSource("https://other.example/presentation"); err == nil || !strings.Contains(err.Error(), "not allowed") {
 		t.Fatalf("validateSource() error = %v", err)
 	}
-	params := json.RawMessage(`{"name":"presentation.write","input":{"expectedRevision":"0","html":"12345"}}`)
+	params := json.RawMessage(`{"name":"presentation.write","input":{"expectedStateRevision":"0","html":"12345"}}`)
 	if err := policy.validateCall("act", params); err == nil || !strings.Contains(err.Error(), "presentation HTML") {
 		t.Fatalf("validateCall() error = %v", err)
 	}
@@ -151,9 +157,81 @@ func TestPresentationPolicyRejectsInvalidConfiguration(t *testing.T) {
 		`{"policy":{"authorizedActions":["presentation.delete"]}}`,
 		`{"policy":{"executeTimeoutMillis":-1}}`,
 		`{"policy":{"captureTimeoutMillis":120001}}`,
+		`{"policy":{"mountTimeoutMillis":-1}}`,
+		`{"policy":{"allowedArtifactTransports":["xallet-volume"]}}`,
 	} {
 		if _, err := decodeOptions(json.RawMessage(raw)); err == nil {
 			t.Fatalf("decodeOptions(%s) error = nil", raw)
+		}
+	}
+}
+
+func TestPresentationArtifactMountUsesProviderNeutralAllowedLocation(t *testing.T) {
+	policy, err := resolvePolicy(policyConfig{
+		AllowedSourceOrigins:      []string{"http://127.0.0.1:8082"},
+		AllowedArtifactTransports: []string{"http"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := json.RawMessage(`{
+		"name":"presentation.mount",
+		"input":{
+			"expectedStateRevision":"1",
+			"artifact":{
+				"apiVersion":"interaction.presentation/v1alpha1",
+				"artifactId":"experience-42",
+				"revision":"sha256:abc123",
+				"kind":"web.entrypoint",
+				"locations":[
+					{"transport":"provider-handle","uri":"artifact://experience-42"},
+					{"transport":"http","uri":"http://127.0.0.1:8082/"}
+				]
+			}
+		}
+	}`)
+	if err := policy.validateCall("act", params); err != nil {
+		t.Fatalf("validateCall() error = %v", err)
+	}
+}
+
+func TestPresentationArtifactMountRejectsDisallowedLocation(t *testing.T) {
+	policy := defaultPresentationPolicy()
+	params := json.RawMessage(`{
+		"name":"presentation.mount",
+		"input":{
+			"expectedStateRevision":"0",
+			"artifact":{
+				"apiVersion":"interaction.presentation/v1alpha1",
+				"artifactId":"experience-42",
+				"revision":"v1",
+				"kind":"web.entrypoint",
+				"locations":[{"transport":"target-file","uri":"file:///presentations/experience/index.html"}]
+			}
+		}
+	}`)
+	if err := policy.validateCall("act", params); err == nil || !strings.Contains(err.Error(), "allowed transport") {
+		t.Fatalf("validateCall() error = %v", err)
+	}
+}
+
+func TestPresentationArtifactSchemaIsProviderNeutral(t *testing.T) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test path")
+	}
+	path := filepath.Join(filepath.Dir(file), "..", "..", "protocol", "presentation", "v1", "artifact.schema.json")
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !json.Valid(contents) {
+		t.Fatal("artifact schema is invalid JSON")
+	}
+	lower := strings.ToLower(string(contents))
+	for _, forbidden := range []string{"jangolova", "xallet"} {
+		if strings.Contains(lower, forbidden) {
+			t.Fatalf("provider-neutral artifact schema contains %q", forbidden)
 		}
 	}
 }

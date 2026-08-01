@@ -21,6 +21,7 @@ import (
 
 var instanceIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 var handleNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._-]{0,127}$`)
+var targetIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$`)
 
 const eventHistoryLimit = 256
 
@@ -137,7 +138,16 @@ func (s *Service) handleInstances(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
 		return
 	}
-	adapter, ok := s.registry.Engine(request.Engine.Adapter)
+	adapterName := strings.TrimSpace(request.Engine.Adapter)
+	if adapterName == "auto" {
+		selected, selectErr := SelectAutomaticEngine(r.Context(), s.registry, request.Target, request.Engine.RequiredCapabilities)
+		if selectErr != nil {
+			writeError(w, http.StatusUnprocessableEntity, "engine_not_compatible", selectErr.Error())
+			return
+		}
+		adapterName = selected
+	}
+	adapter, ok := s.registry.Engine(adapterName)
 	if !ok {
 		writeError(w, http.StatusNotFound, "engine_not_found", "interaction engine is not registered")
 		return
@@ -150,7 +160,7 @@ func (s *Service) handleInstances(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	record := &runningInstance{
-		adapter: request.Engine.Adapter,
+		adapter: adapterName,
 		status:  "connecting",
 		health: Health{
 			Status:     orchestrator.EngineHealthStarting,
@@ -169,16 +179,22 @@ func (s *Service) handleInstances(w http.ResponseWriter, r *http.Request) {
 	for _, endpoint := range request.Target.Endpoints {
 		endpoints = append(endpoints, orchestrator.TargetEndpoint{
 			Name: endpoint.Name, Protocol: endpoint.Protocol, URL: endpoint.URL,
+			CredentialRef: endpoint.CredentialRef, TLSRef: endpoint.TLSRef,
+			Audience: endpoint.Audience, Metadata: cloneValues(endpoint.Metadata),
 		})
 	}
 	instance, err := adapter.Connect(r.Context(), manifest.EngineSpec{
-		Adapter: request.Engine.Adapter,
-		Source:  request.Engine.Source,
-		Options: request.Engine.Options,
+		Adapter:              adapterName,
+		RequiredCapabilities: append([]string(nil), request.Engine.RequiredCapabilities...),
+		Source:               request.Engine.Source,
+		Options:              request.Engine.Options,
 	}, orchestrator.EngineTarget{
-		Kind:      request.Target.Kind,
-		Endpoints: endpoints,
-		Handles:   orchestrator.EngineHandles(cloneValues(request.Target.Handles)),
+		APIVersion: request.Target.APIVersion,
+		TargetID:   request.Target.TargetID,
+		Kind:       request.Target.Kind,
+		Endpoints:  endpoints,
+		Handles:    orchestrator.EngineHandles(cloneValues(request.Target.Handles)),
+		Metadata:   cloneValues(request.Target.Metadata),
 	})
 	if err != nil {
 		s.mu.Lock()
@@ -498,6 +514,20 @@ func validateConnectRequest(request ConnectRequest) error {
 	if strings.TrimSpace(request.Engine.Adapter) == "" {
 		return errors.New("engine.adapter is required")
 	}
+	for _, capability := range request.Engine.RequiredCapabilities {
+		if !handleNamePattern.MatchString(capability) {
+			return fmt.Errorf("invalid required engine capability %q", capability)
+		}
+	}
+	if request.Target.APIVersion != "" && request.Target.APIVersion != TargetAPIVersion {
+		return fmt.Errorf("target.apiVersion must be %q", TargetAPIVersion)
+	}
+	if request.Target.APIVersion != "" && request.Target.TargetID == "" {
+		return errors.New("target.targetId is required when target.apiVersion is supplied")
+	}
+	if request.Target.TargetID != "" && !targetIDPattern.MatchString(request.Target.TargetID) {
+		return errors.New("target.targetId is invalid")
+	}
 	if strings.TrimSpace(request.Target.Kind) == "" {
 		return errors.New("target.kind is required")
 	}
@@ -507,15 +537,35 @@ func validateConnectRequest(request ConnectRequest) error {
 			return errors.New("engine.options must be a JSON object")
 		}
 	}
+	if len(request.Target.Endpoints) > 64 {
+		return errors.New("target endpoints must not exceed 64 entries")
+	}
+	endpointNames := make(map[string]struct{}, len(request.Target.Endpoints))
 	for index, endpoint := range request.Target.Endpoints {
 		if !handleNamePattern.MatchString(endpoint.Name) {
 			return fmt.Errorf("invalid target endpoint name %q", endpoint.Name)
 		}
+		if _, exists := endpointNames[endpoint.Name]; exists {
+			return fmt.Errorf("duplicate target endpoint name %q", endpoint.Name)
+		}
+		endpointNames[endpoint.Name] = struct{}{}
 		if strings.TrimSpace(endpoint.Protocol) == "" {
 			return fmt.Errorf("target endpoint %d protocol is required", index)
 		}
-		if strings.TrimSpace(endpoint.URL) == "" || strings.ContainsRune(endpoint.URL, '\x00') {
+		if strings.TrimSpace(endpoint.URL) == "" || len(endpoint.URL) > 4096 || strings.ContainsRune(endpoint.URL, '\x00') {
 			return fmt.Errorf("target endpoint %q URL is required", endpoint.Name)
+		}
+		if endpoint.CredentialRef != "" && !handleNamePattern.MatchString(endpoint.CredentialRef) {
+			return fmt.Errorf("target endpoint %q credentialRef is invalid", endpoint.Name)
+		}
+		if endpoint.TLSRef != "" && !handleNamePattern.MatchString(endpoint.TLSRef) {
+			return fmt.Errorf("target endpoint %q tlsRef is invalid", endpoint.Name)
+		}
+		if endpoint.Audience != "" && endpoint.Audience != "engine" && endpoint.Audience != "target" {
+			return fmt.Errorf("target endpoint %q audience must be engine or target", endpoint.Name)
+		}
+		if err := validateStringMetadata("target endpoint "+endpoint.Name+" metadata", endpoint.Metadata); err != nil {
+			return err
 		}
 	}
 	for name, value := range request.Target.Handles {
@@ -527,6 +577,21 @@ func validateConnectRequest(request ConnectRequest) error {
 		}
 		if strings.ContainsRune(value, '\x00') {
 			return fmt.Errorf("handle %q contains a null byte", name)
+		}
+	}
+	if err := validateStringMetadata("target metadata", request.Target.Metadata); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateStringMetadata(label string, values map[string]string) error {
+	for name, value := range values {
+		if !handleNamePattern.MatchString(name) {
+			return fmt.Errorf("%s key %q is invalid", label, name)
+		}
+		if strings.ContainsRune(value, '\x00') {
+			return fmt.Errorf("%s value %q contains a null byte", label, name)
 		}
 	}
 	return nil

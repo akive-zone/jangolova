@@ -6,7 +6,8 @@ package manifest
 import "encoding/json"
 
 type EngineSpec struct {
-	Adapter string          `json:"adapter"`
-	Source  string          `json:"source,omitempty"`
-	Options json.RawMessage `json:"options,omitempty"`
+	Adapter              string          `json:"adapter"`
+	RequiredCapabilities []string        `json:"requiredCapabilities,omitempty"`
+	Source               string          `json:"source,omitempty"`
+	Options              json.RawMessage `json:"options,omitempty"`
 }

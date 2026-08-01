@@ -58,5 +58,6 @@ JANGOLOVA_PROVIDER_TOKEN="${token}" \
 # independently served presentation target.
 curl -fsS http://127.0.0.1:9224/json/version >/dev/null
 curl -fsS http://127.0.0.1:8081/ >/dev/null
+curl -fsS http://127.0.0.1:8082/ >/dev/null
 
-echo "Web presentation remained target-preserving against caller-owned Chromium"
+echo "Direct-container web presentation remained target-preserving"

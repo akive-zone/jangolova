@@ -17,9 +17,13 @@ type EngineInstance interface {
 // TargetEndpoint identifies a caller-owned service that an interaction engine
 // can attach to, such as a Chromium CDP endpoint or a Unity bridge endpoint.
 type TargetEndpoint struct {
-	Name     string
-	Protocol string
-	URL      string
+	Name          string
+	Protocol      string
+	URL           string
+	CredentialRef string
+	TLSRef        string
+	Audience      string
+	Metadata      map[string]string
 }
 
 // EngineHandles contains opaque target handles supplied and owned by the
@@ -27,13 +31,16 @@ type TargetEndpoint struct {
 // underlying resource.
 type EngineHandles map[string]string
 
-// EngineTarget is the complete caller-resolved target description. Xallet or
-// the native host creates and manages the target runtime before this value is
-// passed to Jangolova.
+// EngineTarget is the complete caller-resolved target description. A person,
+// native launcher, container/VM manager, Xallet, or another target owner may
+// supply it. Location and lifecycle are deliberately outside this contract.
 type EngineTarget struct {
-	Kind      string
-	Endpoints []TargetEndpoint
-	Handles   EngineHandles
+	APIVersion string
+	TargetID   string
+	Kind       string
+	Endpoints  []TargetEndpoint
+	Handles    EngineHandles
+	Metadata   map[string]string
 }
 
 func (t EngineTarget) Endpoint(protocol string) (TargetEndpoint, bool) {
