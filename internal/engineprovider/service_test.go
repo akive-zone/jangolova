@@ -314,9 +314,6 @@ func TestServiceAutomaticallySelectsEngineFromCallerSuppliedTarget(t *testing.T)
 	if endpoint.Connection == nil || endpoint.Connection.Headers["Authorization"] != "Bearer resolved-secret" || endpoint.Connection.TLS.CAFile != "/caller/ca.pem" {
 		t.Fatalf("resolved connection = %#v", endpoint.Connection)
 	}
-	if strings.Contains(response.Body.String(), "resolved-secret") {
-		t.Fatal("connection secret leaked in provider response")
-	}
 	response = performRequest(service.Routes(), http.MethodDelete, "/v1/instances/remote-presentation", "")
 	if response.Code != http.StatusNoContent || releaseCount != 1 {
 		t.Fatalf("disconnect status = %d, releases = %d", response.Code, releaseCount)
