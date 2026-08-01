@@ -8,6 +8,7 @@ import (
 	"jangolova/adapters/browserautomation"
 	"jangolova/adapters/safarimcp"
 	"jangolova/adapters/webdriverclassic"
+	"jangolova/adapters/webpresentation"
 	"jangolova/internal/orchestrator"
 )
 
@@ -27,6 +28,9 @@ func EngineRegistry() (*orchestrator.Registry, error) {
 	}
 	if err := registry.RegisterEngine("safari-mcp", safarimcp.Adapter{}); err != nil {
 		return nil, fmt.Errorf("register Safari MCP interaction engine: %w", err)
+	}
+	if err := registry.RegisterEngine("web-presentation", webpresentation.Adapter{}); err != nil {
+		return nil, fmt.Errorf("register web presentation interaction engine: %w", err)
 	}
 	return registry, nil
 }

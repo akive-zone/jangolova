@@ -23,6 +23,7 @@ same target endpoints and handles without Xallet.
 - Safari MCP attachment through a caller-owned Streamable HTTP relay.
 - Agent-facing `hello`, `capabilities`, `describe`, `act`, and `events` calls.
 - Three.js dynamic presentation example.
+- `web-presentation` declarative presentation adapter for caller-owned CDP browsers.
 - Authenticated cooperative bridge and Unity Package Manager integration.
 - Target-preserving disconnect, active health, and lifecycle events.
 

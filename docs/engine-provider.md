@@ -60,6 +60,38 @@ Puppeteer can instead attach to a caller-owned WebDriver BiDi endpoint:
 }
 ```
 
+Attach Jangolova's declarative web presentation bridge to a caller-owned
+Chromium page. The target provider is responsible for starting Chromium,
+serving the presentation URL, and supplying the CDP endpoint:
+
+```json
+{
+  "apiVersion": "interaction.engine/v1alpha1",
+  "instanceId": "presentation-one",
+  "engine": {
+    "adapter": "web-presentation",
+    "source": "http://127.0.0.1:8080/examples/web-presentation/"
+  },
+  "target": {
+    "kind": "browser",
+    "endpoints": [{
+      "name": "cdp",
+      "protocol": "cdp",
+      "url": "http://127.0.0.1:9222"
+    }]
+  }
+}
+```
+
+The presentation adapter does not launch Chromium, allocate a display, or
+serve files. Those responsibilities remain with Xallet or a native host.
+Once connected, call `act` with `presentation.create` or
+`presentation.replace` for structured documents, or `presentation.write` with
+HTML/CSS/JavaScript source for a complete authored surface. Then use
+`presentation.patch`, `presentation.execute`, and `presentation.activate` for
+incremental updates. `presentation.capture` returns a PNG captured by the
+attached browser.
+
 WebDriver Classic attaches to an existing caller-owned driver session. The
 target provider creates and later deletes that session:
 

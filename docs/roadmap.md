@@ -31,7 +31,9 @@
 
 - [x] Keep the Three.js dynamic-scene experience and protocol.
 - [x] Keep the Unity package and authenticated native bridge.
-- [ ] Package Three.js presentations behind a provider-visible adapter.
+- [x] Package a web presentation host behind the provider-visible
+  `web-presentation` adapter (HTML/CSS/JS write plus
+  create/replace/patch/describe/act/capture/events).
 - [ ] Expose Unity bridge attachment through the interaction provider.
 - [ ] Add an Unreal plugin implementing the same semantic contract.
 

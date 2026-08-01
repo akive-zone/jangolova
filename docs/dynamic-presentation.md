@@ -13,10 +13,16 @@ target is still supplied by Xallet or the native system. Jangolova uses its
 Playwright/Puppeteer interaction engine to navigate and operate that target;
 it does not launch the browser.
 
-The current `connect-engine --source URL` option navigates an attached browser
-to a caller-reachable presentation URL. Packaging and serving reusable
-Jangolova presentation bundles through the provider is the next web-specific
-adapter slice.
+The `web-presentation` adapter now exposes a provider-visible declarative web
+surface. It attaches to a caller-owned CDP browser, optionally navigates to
+`engine.source`, and forwards `presentation.create`, `presentation.replace`,
+`presentation.patch`, `presentation.write`, `presentation.execute`,
+`presentation.describe`, `presentation.activate`, `presentation.capture`, and
+the cursor-based event stream. The browser still
+belongs to Xallet or the native host; the adapter only connects to it.
+
+The minimal host in `examples/web-presentation` is a reference renderer. It can
+be served by any static server and then attached through the provider API.
 
 ## Unity and Unreal
 
@@ -31,3 +37,6 @@ agent system decides which write or externally-effectful actions are allowed.
 Presentation artifacts and behavior belong to Jangolova. Serving, player
 launch, graphics/display allocation, and process lifecycle belong to Xallet or
 another target provider.
+
+See [Web presentation provider handoff](presentation-provider.md) for the
+target contract and the responsibilities Xallet should implement.
