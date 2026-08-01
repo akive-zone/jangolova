@@ -259,7 +259,7 @@ func (l *materialLease) releasePending(revision uint64) {
 
 func requiresConnectionAcknowledgement(protocol string) bool {
 	switch protocol {
-	case "cdp", "webdriver-bidi":
+	case "cdp", "webdriver-bidi", "pacman-ws":
 		return true
 	default:
 		return false

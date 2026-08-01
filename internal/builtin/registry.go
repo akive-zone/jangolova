@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"jangolova/adapters/browserautomation"
+	"jangolova/adapters/pacman"
 	"jangolova/adapters/safarimcp"
 	"jangolova/adapters/webdriverclassic"
 	"jangolova/adapters/webpresentation"
@@ -31,6 +32,9 @@ func EngineRegistry() (*orchestrator.Registry, error) {
 	}
 	if err := registry.RegisterEngine("web-presentation", webpresentation.Adapter{}); err != nil {
 		return nil, fmt.Errorf("register web presentation interaction engine: %w", err)
+	}
+	if err := registry.RegisterEngine("pacman", pacman.Adapter{}); err != nil {
+		return nil, fmt.Errorf("register Pacman interaction engine: %w", err)
 	}
 	return registry, nil
 }

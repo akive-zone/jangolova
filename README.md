@@ -25,6 +25,8 @@ same target endpoints and handles without Xallet.
 - Three.js dynamic presentation example.
 - `web-presentation` declarative presentation adapter for caller-owned CDP browsers.
 - Authenticated cooperative bridge and Unity Package Manager integration.
+- Pacman semantic presentation attachment and an explicitly allowlisted Unity
+  package; Unity/Unreal rendering and display transport remain external.
 - Target-preserving disconnect, active health, and lifecycle events.
 
 ## Commands
@@ -82,6 +84,7 @@ targets solely to verify attachment portability.
 
 See [Architecture](docs/architecture.md), [Interaction provider](docs/engine-provider.md),
 [Deployment modes](docs/deployment-modes.md), [Bridge protocol](docs/bridge-protocol.md),
+[Pacman](docs/pacman.md),
 [interface creation and operation](docs/interface-model.md),
 [caller-supplied targets](docs/target-descriptor.md),
 [browser target protocols](docs/browser-target-protocols.md), and
@@ -93,6 +96,7 @@ See [Architecture](docs/architecture.md), [Interaction provider](docs/engine-pro
 go test ./...
 npm run test:browser-worker
 npm run test:unity-package
+npm run test:unity-pacman-package
 ```
 
 The optional container fixture is documented in

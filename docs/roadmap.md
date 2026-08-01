@@ -48,8 +48,14 @@
 - [x] Verify artifact mounting in a direct-container target without Xallet.
 - [x] Add authorization, audit, timeout, and cancellation hooks for authored
   JavaScript execution.
-- [ ] Expose Unity bridge attachment through the interaction provider.
+- [x] Define the Pacman Unity/Unreal semantic protocol and lifecycle boundary.
+- [x] Expose authenticated caller-owned `pacman-ws` attachment through the
+  interaction provider.
+- [x] Add a minimal Unity Pacman package with explicit resource/action
+  allowlisting and target-preserving disconnect verification.
 - [ ] Add an Unreal plugin implementing the same semantic contract.
+- [ ] Harden and platform-test the Unity WebSocket listener beyond the .NET 4.x
+  MVP transport.
 
 ## Phase 4: General display interaction
 

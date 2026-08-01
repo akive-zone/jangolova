@@ -1,5 +1,9 @@
 # Architecture
 
+Unity and Unreal semantic presentation use the [Pacman boundary](pacman.md):
+Jangolova dials a caller-owned semantic endpoint while the engine keeps
+rendering and the supervisor separately owns target and display lifecycle.
+
 Jangolova owns interaction and presentation engines. Xallet, a native host, or
 another operator owns the target runtimes with which those engines interact.
 

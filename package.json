@@ -9,7 +9,8 @@
   "scripts": {
     "test:browser-worker": "node --test tests/browser-worker-contract-test.mjs",
     "test:presentation-worker": "node --test tests/presentation-worker-contract-test.mjs",
-    "test:unity-package": "node tests/unity-package-contract-test.mjs"
+    "test:unity-package": "node tests/unity-package-contract-test.mjs",
+    "test:unity-pacman-package": "node tests/unity-pacman-package-contract-test.mjs"
   },
   "dependencies": {
     "playwright-core": "1.51.1",

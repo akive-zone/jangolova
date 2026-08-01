@@ -12,6 +12,11 @@ required capabilities, never by target location. See
 Opaque credential and TLS references use the secret-safe
 [target connection security layer](target-connection-security.md).
 
+Unity and Unreal semantic presentation targets use the provider-visible
+`pacman` adapter and a caller-owned `pacman-ws` endpoint. See the
+[Pacman architecture and protocol](pacman.md). The adapter attaches to the
+application; it does not own its renderer or lifecycle.
+
 ```bash
 export JANGOLOVA_PROVIDER_TOKEN="a-random-session-secret"
 jangolova serve-engine-provider --bind 127.0.0.1:7391

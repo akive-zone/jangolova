@@ -36,7 +36,10 @@ the underlying secret storage.
 
 The endpoint URL must be reachable from Jangolova's network namespace. Address
 translation, tunnels, firewall rules, service discovery, and runtime lifecycle
-remain caller responsibilities. `127.0.0.1`, container DNS, a VM address, and
+remain caller responsibilities. Unity and Unreal semantic targets advertise a
+`pacman-ws` endpoint; its URL is the target-owned authenticated WebSocket in
+[Pacman](pacman.md), not a display or pixel stream.
+`127.0.0.1`, container DNS, a VM address, and
 a remote TLS URL are treated identically after protocol validation.
 
 ## Automatic engine selection
@@ -73,6 +76,7 @@ hostname or deployment owner. Current protocol mappings are:
 - WebDriver BiDi → Puppeteer;
 - WebDriver Classic → generic or WebKit WebDriver;
 - MCP Streamable HTTP → Safari MCP.
+- Pacman WebSocket → Pacman for Unity, Unreal, or another conforming fixture.
 
 An explicit adapter name remains supported when the caller needs a specific
 implementation. The standalone `connect-engine` command defaults to `auto` and

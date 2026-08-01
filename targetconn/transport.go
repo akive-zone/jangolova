@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gorilla/websocket"
+
 	"jangolova/internal/orchestrator"
 )
 
@@ -40,6 +42,31 @@ func HTTPClient(endpoint orchestrator.TargetEndpoint, timeout time.Duration) (*h
 		roundTripper = &materialTransport{base: transport, material: endpoint.Connection}
 	}
 	return &http.Client{Timeout: timeout, Transport: roundTripper}, nil
+}
+
+// WebSocketDialer returns an isolated dialer and authentication headers from
+// one connection-material snapshot. Callers supply the headers only to the
+// WebSocket handshake request.
+func WebSocketDialer(endpoint orchestrator.TargetEndpoint) (*websocket.Dialer, map[string]string, error) {
+	if err := Validate(endpoint); err != nil {
+		return nil, nil, err
+	}
+	parsed, err := url.Parse(endpoint.URL)
+	if err != nil || parsed.Scheme != "ws" && parsed.Scheme != "wss" {
+		return nil, nil, errors.New("WebSocket endpoint must use ws or wss")
+	}
+	dialer := *websocket.DefaultDialer
+	snapshot := endpoint.Connection.Snapshot()
+	if snapshot.TLS != nil {
+		if parsed.Scheme != "wss" {
+			return nil, nil, errors.New("TLS connection material requires a wss endpoint")
+		}
+		dialer.TLSClientConfig, err = tlsConfig(snapshot.TLS)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return &dialer, snapshot.Headers, nil
 }
 
 // Headers returns a defensive copy suitable for an adapter-private connection

@@ -116,6 +116,7 @@ manager without changing target or adapter contracts.
 | Web presentation CDP | Yes | Reconnect | Yes | No |
 | WebDriver Classic | Yes | Per request | Yes | Yes |
 | Safari MCP HTTP | Yes | Per request | Yes | Yes |
+| Pacman WebSocket | Yes | Reconnect | Yes | Yes |
 
 CDP workers authenticate both HTTP discovery and WebSocket attachment. Worker
 processes receive headers over private standard input, never command-line
@@ -123,10 +124,11 @@ arguments. Node CDP workers reject mTLS explicitly because the supported
 libraries do not expose a portable client-certificate hook; an authenticated
 caller-owned relay remains the appropriate boundary for that case.
 
-TLS material is resolved and leased safely but is fixed for the lifetime of
-the adapter transport or Node worker. Rotating a CA or client certificate
-currently requires a new interaction instance; live TLS transport replacement
-is separate from credential-header renewal.
+Node worker TLS material is resolved and leased safely but remains fixed for
+the lifetime of that worker. Rotating its CA currently requires a new
+interaction instance. Pacman creates a replacement WebSocket transport for a
+new connection-material generation, so both credential headers and TLS files
+are applied to its replacement handshake.
 
 The standalone command accepts matching endpoint reference flags:
 
