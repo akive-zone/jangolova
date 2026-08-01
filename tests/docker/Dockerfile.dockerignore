@@ -1,0 +1,5 @@
+# Ignore repository-only and generated content in the container test context.
+.git
+bin
+node_modules
+out

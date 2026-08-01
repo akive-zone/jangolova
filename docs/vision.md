@@ -2,66 +2,73 @@
 
 ## Purpose
 
-Jangolova makes an interactive engine available wherever it needs to run and
-wherever its output needs to be seen.
-
-An engine may run as a native process, inside a browser, inside a WebAssembly
-runtime, on the current device, or on a remote host. A display may be a local
-window, a virtual desktop, a browser canvas, a captured frame stream, or a
-remote interactive client. Jangolova owns the session that connects them.
+Jangolova makes display engines portable across hosts, virtual machines, and
+containers. It provides one engine lifecycle and endpoint contract for browser
+engines, native runtimes, and cooperative 2D/3D experiences.
 
 The product promise is:
 
-> Start or attach to an engine, connect it to one or more display systems,
-> provide control and input, and manage the complete lifecycle as one session.
+> Given an engine specification and an existing runtime environment, start or
+> attach to the engine and return the endpoints needed to use it.
+
+Jangolova deliberately stops at that boundary. It does not decide where a
+workload is placed, create its display server, publish its ports, or own the
+larger display session.
 
 ## Principles
 
-### Engines and displays are independent
+### Standalone first, orchestrator compatible
 
-An engine should not need to understand whether its output is viewed through a
-local window, VNC, WebRTC, recording, or a remote agent. Display and transport
-decisions belong to the session.
+Every engine adapter must work without Xallet: directly on a native host,
+against a caller-provided display, or in an independently configured
+container. Xallet uses the same contracts when it manages the workload.
 
-### Local and remote are deployment choices
+### Engines consume runtime inputs
 
-The same session description should work on one device or across several
-devices. Placement and transport may change without changing the workload's
-intent.
+An engine can inherit a native desktop or receive values such as `DISPLAY` and
+`WAYLAND_DISPLAY`. Those values identify runtime resources owned by the
+caller. They are not surface objects managed by Jangolova.
 
-### Adapters expose capabilities
+### Engines are not forced into one API
 
-Unity, Unreal Engine, Phaser, Three.js, Babylon.js, Playwright, and Puppeteer
-do not share identical APIs. Jangolova will expose common lifecycle and
-capability contracts without pretending all engines are interchangeable.
+Chromium, WebKit, Gecko, SpiderMonkey, Unity, Unreal, and web rendering
+libraries have different lifecycle and control models. Jangolova provides a
+small common launch/stop/endpoint contract while preserving engine-specific
+options and capabilities.
 
-### Safe defaults
+### Cooperative presentation is engine-side
 
-Attaching is preferred over replacing existing state. External actions require
-explicit intent. Credentials and persistent profiles remain outside session
-manifests.
+Web libraries and native engine plugins can implement the Jangolova bridge to
+describe a scene, expose bounded actions, and emit events. CDP, VNC, capture,
+input routing, and access policy remain responsibilities of the display
+runtime or caller.
 
-### The prototype remains executable
+### Placement is external
 
-Architecture is proven through running vertical slices. The existing browser,
-Xvfb, VNC, CDP, Playwright, and Puppeteer workflow remains a regression target
-while generalized components replace its hard-coded orchestration.
+Docker, Podman, Apple Container, Kubernetes, a VM manager, or a native process
+launcher may place Jangolova. The repository can include build artifacts and
+test fixtures, but production topology belongs to the operator. When the
+operator is Xallet, Xallet owns that configuration.
 
-## Initial use cases
+### Private endpoints by default
 
-1. Launch a browser-hosted Three.js, Babylon.js, or Phaser application on an
-   Xvfb surface and view it locally or over VNC.
-2. Attach Puppeteer, Playwright, or CDP control to that browser session.
-3. Launch a native engine on a local or virtual display and expose its output
-   through a connector.
-4. Run an engine on a remote Jangolova agent while controlling and viewing it
-   from another device.
-5. Capture screenshots, frame streams, recordings, logs, and health events
-   from a session through consistent APIs.
+Engine endpoints are local capabilities. Jangolova reports them without
+assuming they are publicly reachable. The operator decides whether and how to
+expose them.
 
-## Non-goals for the foundation
+## Initial engine families
 
-- Replacing Unity, Unreal Engine, or browser rendering APIs.
-- Hiding every engine-specific feature behind a lowest-common-denominator API.
-- Building a cloud scheduler before one-host sessions are dependable.
-- Storing account credentials inside source-controlled configuration.
+1. Chromium launch and attach with CDP endpoint discovery.
+2. Local web projects presented through Chromium.
+3. Generic native processes with an authenticated cooperative bridge.
+4. Unity and Unreal integrations using the same lifecycle and bridge model.
+5. Future WebKit, Gecko, SpiderMonkey, and additional browser/runtime adapters.
+
+## Non-goals
+
+- Owning Xvfb, VNC, WebRTC, capture, or desktop input.
+- Defining OCI networks, volumes, devices, port mappings, or placement policy.
+- Acting as Xallet's scheduler or container-management layer.
+- Replacing engine-native rendering and scene APIs.
+- Hiding every engine feature behind a lowest-common-denominator interface.
+- Providing unrestricted agent access to a desktop or engine process.

@@ -1,81 +1,85 @@
 # Roadmap
 
-The roadmap is organized around executable milestones rather than a complete
-adapter catalog.
+The roadmap is organized around a standalone engine toolkit that remains
+compatible with Xallet and other operators.
 
-## Phase 0: Preserve the vertical slice
+## Phase 0: Preserve portability tests
 
 Status: complete.
 
-- Headed Chromium on Xvfb.
-- Localhost-bound CDP and VNC.
-- Persistent browser profiles.
-- Go CDP, Go Playwright, and Puppeteer controller modes.
-- Local fixture and Docker smoke tests.
-- Initial Git history.
+- Keep a headed-browser/Xvfb vertical slice as a reproducible test fixture.
+- Keep all container topology under `tests/docker/`.
+- Treat Xvfb as an externally supplied test dependency, not Jangolova
+  product components.
 
-## Phase 1: Session foundation
+## Phase 1: Establish the engine boundary
 
 Status: in progress.
 
-- [x] Define the versioned session manifest.
-- [x] Validate names and cross-resource references.
-- [x] Define engine, surface, controller, and connector contracts.
-- [x] Implement adapter preflight, ordered startup, and reverse-order rollback.
-- [x] Add `jangolova validate`.
-- [ ] Add adapter discovery commands.
-- Keep the foundation free of concrete engine dependencies.
+- [x] Define a registry of display-engine adapters.
+- [x] Pass caller-resolved environment values directly to engine adapters.
+- [x] Implement direct engine discovery and launch commands.
+- [x] Implement an authenticated, versioned engine-provider API.
+- [x] Return typed private endpoint metadata.
+- [x] Document native-host, external-display, independent-container, and
+  Xallet-managed modes.
+- [x] Add readiness and unexpected-exit events to engine instances.
+- [x] Define opaque native-handle launch inputs without giving Jangolova
+  ownership of those handles.
 
-Exit criterion: a test session using fake adapters proves startup, readiness,
-stop, and rollback behavior. Startup, stop, and rollback are covered; explicit
-readiness and health reporting remain.
+Exit criterion: one adapter binary launches unchanged in every deployment mode
+and never creates or publishes a display runtime.
 
-## Phase 2: Extract the browser vertical slice
+## Phase 2: Complete browser engine coverage
 
-- Implement Xvfb as a surface adapter.
-- Implement Chromium as a browser engine adapter.
-- Wrap existing CDP, Go Playwright, and Puppeteer flows as controllers.
-- Implement VNC as a connector.
-- Express the Xpost prototype as a session manifest.
+- [x] Launch or attach to Chromium and report CDP.
+- [x] Serve a local web project through Chromium.
+- [ ] Add WebDriver BiDi endpoint discovery where supported.
+- [ ] Add WebKit engine support.
+- [ ] Add Gecko engine support.
+- [ ] Define the role of SpiderMonkey as an embeddable runtime rather than a
+  windowed browser.
+- [x] Add adapter capability and executable-availability probes.
 
-Exit criterion: the current Docker smoke test runs through the generalized
-orchestrator without losing any controller mode.
+Exit criterion: callers can discover what is truly installed and launch each
+supported browser family through one provider contract.
 
-## Phase 3: Browser rendering engines
+## Phase 3: Native 2D/3D engines
 
-- Add a static/web-project engine adapter.
-- Add Phaser, Three.js, and Babylon.js examples.
-- Add canvas readiness and frame-capture capabilities.
-- Add browser input and viewport configuration.
+- [x] Define an engine-neutral cooperative bridge protocol.
+- [x] Add a generic native-process lifecycle adapter.
+- [x] Add an authenticated outbound WebSocket bridge host.
+- [x] Add a Unity package proof of concept.
+- [ ] Validate the Unity integration in Editor and built players on supported
+  native and external displays.
+- [ ] Add an Unreal Engine plugin proof of concept.
+- [x] Add engine-specific capability and active health reporting for current
+  adapters.
 
-Exit criterion: one manifest can launch each example and expose it locally,
-through VNC, and through screenshot capture.
+Exit criterion: Unity and Unreal examples run natively, in an independently
+configured environment, and when launched by Xallet without adapter forks.
 
-## Phase 4: Native engines
+## Phase 4: Provider hardening
 
-- Define native process and project/build discovery capabilities.
-- Add Unity adapter proof of concept.
-- Add Unreal Engine adapter proof of concept.
-- Record engine-specific capabilities without expanding the common contract
-  prematurely.
+- [x] Add a bounded cursor-addressed lifecycle event journal and status
+  transitions.
+- [x] Add adapter-specific active health probes.
+- [ ] Add graceful recovery and orphan detection.
+- [ ] Add provider protocol compatibility tests and generated client fixtures.
+- [ ] Add resource limits and concurrency policy hooks supplied by the
+  operator.
+- [ ] Add signed release artifacts and versioned engine-runtime images.
 
-Exit criterion: launch or attach to one Unity and one Unreal example and
-connect each to a supported display surface.
+## Phase 5: Retire combined-session ownership
 
-## Phase 5: Interactive remote transport
+- [x] Remove the legacy session/surface/controller/connector APIs.
+- [x] Remove display-runtime examples and production configuration.
+- [x] Replace Jangolova controller calls with endpoint metadata consumed by the
+  caller.
+- [x] Remove the legacy agent runtime and controller smoke harnesses.
+- [x] Add a repository boundary test preventing display-runtime ownership from
+  returning to product packages.
 
-- Add WebRTC connector.
-- Define the authenticated remote-agent protocol.
-- Add placement and capability negotiation.
-- Forward input, health, logs, and selected artifacts.
-
-Exit criterion: run an engine on one machine and interact with it from another
-using a single session description.
-
-## Phase 6: Operations
-
-- Session persistence and recovery.
-- Structured events, metrics, and tracing.
-- Resource limits and concurrency policy.
-- Secret-provider integration.
-- Compatibility policy for manifests and adapter APIs.
+Exit criterion: the Jangolova product surface contains only engine and
+engine-integration concerns; display-runtime orchestration lives entirely with
+its operator.

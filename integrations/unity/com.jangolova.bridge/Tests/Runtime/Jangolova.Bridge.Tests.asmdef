@@ -1,0 +1,11 @@
+{
+  "name": "Jangolova.Bridge.Tests",
+  "rootNamespace": "Jangolova.Unity.Tests",
+  "references": [
+    "Jangolova.Bridge",
+    "Unity.Newtonsoft.Json"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

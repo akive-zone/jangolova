@@ -1,0 +1,8 @@
+{
+  "name": "Jangolova.Bridge",
+  "rootNamespace": "Jangolova.Unity",
+  "references": [
+    "Unity.Newtonsoft.Json"
+  ],
+  "autoReferenced": true
+}

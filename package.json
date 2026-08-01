@@ -1,5 +1,5 @@
 {
-  "name": "jangolova-xpost",
+  "name": "jangolova-engine-examples",
   "version": "0.2.0",
   "private": true,
   "type": "module",
@@ -7,9 +7,9 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "xpost:puppeteer": "node scripts/xpost-puppeteer.mjs"
+    "test:unity-package": "node tests/unity-package-contract-test.mjs"
   },
   "dependencies": {
-    "puppeteer-core": "25.4.0"
+    "three": "^0.185.1"
   }
 }

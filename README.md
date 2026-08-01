@@ -1,55 +1,89 @@
 # Jangolova
 
-Jangolova is an engine and display orchestration system. It launches or
-attaches to interactive engines, connects their output to local or remote
-display systems, forwards control and input, and manages the resulting
-session.
+Jangolova is a deployment-neutral display-engine toolkit. It discovers,
+launches, attaches to, observes the health of, and stops browser and native
+engines such as Chromium, Unity, Unreal, and generic executables.
 
-The long-term target includes:
+Jangolova consumes runtime inputs supplied by its caller. It does not own
+Xvfb, VNC, WebRTC, CDP clients, container placement, networking, volumes, port
+publication, or display-session policy. Xallet owns those concerns when the
+products are used together.
 
-- Native engines such as Unity and Unreal Engine.
-- Browser engines such as Phaser, Three.js, and Babylon.js.
-- Browser controllers such as CDP, Playwright, and Puppeteer.
-- Local and virtual surfaces such as native windows, X11, Wayland, Xvfb,
-  framebuffers, and browser canvases.
-- Remote connectors such as VNC, WebRTC, and remote Jangolova agents.
+Jangolova runs directly on a physical machine or VM, inside an independently
+configured container, or as a Xallet-managed workload. Xallet integration is a
+supported deployment mode, not a runtime requirement.
 
-The repository currently contains a working browser-automation vertical slice.
-It runs Chromium on a virtual display, exposes it over VNC, and controls it
-through native Go CDP, Go Playwright, or Puppeteer. That prototype is being
-retained as the first integration test and reference application while the
-general orchestration core is built.
+## Included engines and integrations
 
-## Project direction
+- Chromium launch/attach with private CDP endpoint discovery.
+- Local web-project serving through Chromium.
+- Generic native-process lifecycle with caller-supplied environment and opaque
+  handles.
+- Engine-side cooperative bridge protocol and conformance checks.
+- Unity Package Manager bridge package and Three.js example experience.
+- Cursor-addressed engine readiness, health, exit, and failure events.
 
-- [Vision](docs/vision.md)
+## Commands
+
+List engine adapters:
+
+```bash
+go run ./cmd/jangolova engines
+go run ./cmd/jangolova engines --json
+```
+
+Launch Chromium directly on the native host:
+
+```bash
+go run ./cmd/jangolova launch-engine \
+  --adapter chromium \
+  --source https://example.com
+```
+
+Launch an engine against caller-owned runtime inputs:
+
+```bash
+go run ./cmd/jangolova launch-engine \
+  --adapter native-process \
+  --source ./my-engine \
+  --env DISPLAY=:99 \
+  --handle native.window=caller-owned-window-1234
+```
+
+Run the authenticated provider:
+
+```bash
+export JANGOLOVA_PROVIDER_TOKEN="replace-with-a-random-secret"
+go run ./cmd/jangolova serve-engine-provider --bind 127.0.0.1:7391
+```
+
+## Ownership boundary
+
+The supported Jangolova API contains engines and engine-side integrations only.
+The original combined session, surface, controller, connector, agent runtime,
+and deployment scripts have been removed. Test fixtures may construct a
+temporary external display to verify portability, but they are isolated under
+`tests/` and are not product configuration.
+
+See:
+
 - [Architecture](docs/architecture.md)
+- [Vision](docs/vision.md)
+- [Engine provider](docs/engine-provider.md)
+- [Deployment modes](docs/deployment-modes.md)
+- [Experience bridge protocol](docs/bridge-protocol.md)
+- [Dynamic presentation integrations](docs/dynamic-presentation.md)
+- [Native engines](docs/native-engines.md)
+- [Xallet boundary](docs/xallet-boundary.md)
 - [Roadmap](docs/roadmap.md)
-- [Xpost prototype](docs/xpost-prototype.md)
 
-## Current prototype
-
-The prototype can be exercised safely against its local fixture:
+## Tests
 
 ```bash
-docker compose build
-docker compose run --rm --entrypoint scripts/docker-smoke-test.sh xpost
+go test ./...
+npm run test:unity-package
 ```
 
-For VPS setup, persistent login, and individual controller modes, see the
-[Xpost prototype guide](docs/xpost-prototype.md).
-
-## Status
-
-Jangolova is in its foundation phase. Public APIs and manifests are expected to
-change until the first end-to-end generalized session is running.
-
-The first `v1alpha1` session manifest and lifecycle contracts are available.
-Validate the example manifest with:
-
-```bash
-go run ./cmd/jangolova validate --file examples/browser-session.json
-```
-
-This validates configuration and references only. Concrete adapters will be
-connected to the orchestrator during the browser vertical-slice extraction.
+The optional Linux portability fixture is documented in
+[tests/docker/README.md](tests/docker/README.md). Docker is not required by
+Jangolova itself.

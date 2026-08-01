@@ -1,129 +1,138 @@
 # Architecture
 
-## System model
+Jangolova is the display-engine side of the system. It starts or attaches to
+rendering engines and reports engine-local endpoints. It does not create the
+display runtime in which those engines execute.
+
+## Active system boundary
 
 ```text
-Session manifest
-      |
-      v
-Jangolova orchestrator
-      |
-      +-- Surface providers ---- local window / X11 / Wayland / Xvfb / canvas
-      |
-      +-- Engine adapters ------ Unity / Unreal / web engine / native process
-      |
-      +-- Controllers ---------- CDP / Playwright / Puppeteer / input bridge
-      |
-      +-- Connectors ----------- VNC / WebRTC / capture / remote agent
+Caller or operator
+  (shell, test harness, Xallet, or another orchestrator)
+              |
+              | engine spec + resolved runtime environment
+              v
+       Jangolova engine provider
+              |
+              v
+         engine adapter
+  (Chromium, web project, native process,
+       future Unity / Unreal adapters)
+              |
+              v
+   engine instance + typed endpoints
+              |
+              v
+Caller-owned control, display, and publication
 ```
 
-A session is the unit of ownership. It records desired configuration, runtime
-state, resources opened by adapters, and cleanup order.
+The caller decides placement and constructs the display environment before it
+asks Jangolova to launch an engine. The caller may be a local user, a VM or
+container wrapper, a test harness, Xallet, or another compatible system.
 
-## Core concepts
+Jangolova has no dependency on Xallet. Xallet can nevertheless use exactly the
+same engine-provider contract as standalone callers.
 
-### Engine
+## Ownership
 
-The interactive workload. An engine adapter knows how to start or attach to a
-specific runtime and reports the capabilities of the resulting instance.
+Jangolova owns:
 
-Examples include Unity, Unreal Engine, a native executable, or a browser
-hosting Phaser, Three.js, or Babylon.js.
+- display-engine discovery and lifecycle;
+- engine-specific launch and attach behavior;
+- engine-local profiles and child processes when requested;
+- cooperative web and native engine bridges;
+- typed endpoint discovery, such as CDP or a semantic bridge;
+- cleanup of resources created inside an engine adapter.
 
-### Surface
+The operator owns:
 
-The render destination made available to an engine. A surface provider may
-create a native window target, an X11/Wayland display, an Xvfb display, a
-framebuffer, or a browser canvas context.
+- physical, virtual-machine, and OCI placement;
+- X11, Wayland, native desktop, framebuffer, and other display runtimes;
+- container networks, mounts, devices, secrets, and port publication;
+- VNC, WebRTC, capture, input routing, access policy, and session state;
+- translation of private engine endpoints into client-reachable endpoints.
 
-Surfaces expose connection metadata and environment values rather than leaking
-provider-specific process management into engines.
+When Xallet is the operator, all operator responsibilities above belong to
+Xallet. A standalone user can provide the same inputs directly.
 
-### Controller
+## Engine launch contract
 
-A control plane attached to a running engine. CDP, Playwright, and Puppeteer
-are browser controllers: they do not render the application themselves, but
-they can navigate, inspect, automate, and inject input into a browser-hosted
-engine.
+An engine adapter receives:
 
-### Connector
+1. an adapter name;
+2. an engine source, such as a URL, project directory, or executable;
+3. engine-specific options;
+4. caller-resolved environment values;
+5. caller-owned opaque handles.
 
-A connector makes a surface or engine capability available to another
-consumer. VNC, WebRTC, capture/recording, and a remote-agent tunnel are
-connectors.
+The environment is ordinary launch input. For example, `DISPLAY=:99` tells an
+engine where an existing X11 server is; it does not authorize the adapter to
+create or destroy that server. Named opaque handles travel beside environment
+values for adapters that understand native windows, views, layers, devices, or
+other runtime objects. A handle remains owned by its caller.
 
-### Session
+An engine instance supports stop and may report typed endpoints, active health,
+and lifecycle events. Adapter discovery reports actual availability and
+engine-local capabilities. Endpoint metadata describes the engine-side address
+and target port. It does not imply that Jangolova publishes that address outside
+its current network namespace.
 
-A session composes one engine with surfaces, controllers, and connectors. Its
-lifecycle is transactional:
+## Execution modes
 
-1. Validate the manifest and resolve adapters.
-2. Open required surfaces.
-3. Start or attach to the engine.
-4. Attach controllers.
-5. Start connectors.
-6. Report readiness and health.
-7. On stop or failure, close resources in reverse order.
+The engine code is identical in every mode:
 
-## Manifest direction
+- **Native host:** inherit the host environment and native display.
+- **External display:** receive `DISPLAY`, `WAYLAND_DISPLAY`, or equivalent
+  values from a caller.
+- **Independent container:** receive environment, mounts, devices, and network
+  configuration from any OCI operator.
+- **Xallet-managed:** receive placement-resolved values from Xallet and return
+  private engine endpoints for Xallet to expose or control.
 
-The first manifest format is intentionally declarative and versioned:
+See [Deployment modes](deployment-modes.md) for runnable examples.
 
-```yaml
-apiVersion: jangolova.dev/v1alpha1
-kind: Session
-metadata:
-  name: rotating-cube
-spec:
-  engine:
-    adapter: browser
-    source: ./examples/threejs
-  surfaces:
-    - name: desktop
-      adapter: xvfb
-  controllers:
-    - name: automation
-      adapter: puppeteer
-  connectors:
-    - name: remote-view
-      adapter: vnc
-      surface: desktop
-```
+## Provider protocol
 
-JSON support comes first to keep the Go foundation dependency-light. YAML can
-be added at the configuration boundary without changing the domain model.
+The authenticated `jangolova.engine/v1alpha1` HTTP provider is the primary
+process boundary. It exposes engine inventory and launch/get/stop operations.
+It may run on loopback as a standalone daemon or on a private application
+network managed by Xallet or another operator.
+
+The direct `launch-engine` command uses the same adapter contract without an
+HTTP daemon. This keeps native development and portability tests independent
+of an orchestrator.
 
 ## Package direction
 
 ```text
-cmd/jangolova/          CLI and future daemon entry point
-internal/manifest/      versioned configuration and validation
-internal/orchestrator/  session lifecycle and rollback
-internal/registry/      adapter registration and capability discovery
-adapters/               engine, surface, controller, and connector adapters
-examples/               runnable engine/session examples
-docs/                   product and operator documentation
+cmd/jangolova/          direct CLI and engine-provider daemon
+internal/engineprovider/ versioned provider protocol and service
+internal/orchestrator/  engine lifecycle and caller-supplied runtime contract
+internal/bridge/        engine-cooperative semantic protocol
+adapters/               concrete display-engine adapters
+integrations/           engine-side web and native integrations
+deploy/engine-runtime/  optional engine artifact, not runtime topology
+tests/docker/           reproducible test fixture only
 ```
 
-Adapters depend on core contracts. Core packages do not import concrete
-adapters.
+Concrete adapters depend on the core engine contract. The provider depends on
+the registry, but neither the contract nor adapters import Xallet.
 
-## Remote architecture
+## Removed compatibility layer
 
-Remote operation will use a Jangolova agent on the engine host. The control
-plane sends a validated session plan to the agent; the agent owns local
-processes and surfaces and returns capability endpoints and health events.
-
-Remote transport is a later phase. The local lifecycle contracts are being
-designed so the same adapter boundary can sit behind an agent without being
-rewritten.
+The original combined `Session` manifest, surface lifecycle, controllers,
+connectors, JSONL runner, and agent runtime are no longer part of Jangolova.
+Existing display-session behavior belongs in Xallet or another caller. The
+repository boundary test prevents those product responsibilities from being
+reintroduced outside test fixtures.
 
 ## Security boundaries
 
-- Display and control endpoints bind to loopback unless explicitly exposed.
-- Remote connections require authenticated, encrypted transport.
-- Secrets are referenced from an external provider, never embedded in a
-  manifest.
-- Session logs redact adapter-declared sensitive fields.
-- Destructive or externally visible controller actions require explicit
-  configuration.
+- Provider and engine-control endpoints bind to loopback unless an operator
+  explicitly places them on a protected private network.
+- Provider lifecycle operations require bearer authentication.
+- Jangolova returns private endpoint metadata; the operator controls external
+  publication and authorization.
+- Secrets and persistent credentials remain external launch inputs rather than
+  source-controlled engine specifications.
+- Cooperative engine capabilities are descriptive data, not authorization.

@@ -1,0 +1,9 @@
+name: jangolova-tests
+
+services:
+  engine-test:
+    image: jangolova-engine-test
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile
+    shm_size: "1gb"

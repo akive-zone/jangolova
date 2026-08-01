@@ -26,7 +26,12 @@
     <main>
       <h1>Composer Fixture</h1>
       <div data-testid="tweetTextarea_0" role="textbox" contenteditable="true"></div>
-      <button data-testid="tweetButton" onclick="window.__posted = true">Post</button>
+      <button
+        data-testid="tweetButton"
+        onclick="window.__posted = true; this.textContent = 'Posted'; this.dataset.posted = 'true'"
+      >
+        Post
+      </button>
     </main>
   </body>
 </html>
