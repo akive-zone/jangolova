@@ -306,7 +306,7 @@ func (i *instance) wait() {
 	close(i.events)
 }
 func (i *instance) terminate() {
-	if i.command.Process != nil {
+	if i.command != nil && i.command.Process != nil {
 		_ = i.command.Process.Kill()
 	}
 }

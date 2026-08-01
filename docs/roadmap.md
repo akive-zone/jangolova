@@ -37,7 +37,7 @@
 - [x] Add a live Chromium authored-presentation smoke test and verify
   target-preserving disconnect.
 - [x] Define artifact size, origin, revision, and asset-loading policy.
-- [ ] Add authorization, audit, timeout, and cancellation hooks for authored
+- [x] Add authorization, audit, timeout, and cancellation hooks for authored
   JavaScript execution.
 - [ ] Expose Unity bridge attachment through the interaction provider.
 - [ ] Add an Unreal plugin implementing the same semantic contract.
@@ -53,7 +53,8 @@
 
 ## Phase 5: Hardening
 
-- [ ] Add per-capability policy hooks and audit records.
+- [ ] Extend per-capability policy hooks and audit records beyond the current
+  presentation execute/capture path.
 - [ ] Add orphan recovery and reconnection.
 - [ ] Add generated protocol clients and compatibility fixtures.
 - [ ] Sign and publish versioned interaction-runtime images.

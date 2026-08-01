@@ -44,6 +44,11 @@ remain alive. Connected capability discovery also retains the provider's
 common `describe`, `act`, and `events` methods alongside page-declared actions.
 It also verifies source and asset-origin policy, bounded inline artifacts, and
 optimistic revisions by rejecting a stale write without changing the surface.
+Sensitive presentation actions are now policy-gated through
+`authorizedActions`, bounded by `executeTimeoutMillis` and
+`captureTimeoutMillis`, and audited through provider instance events such as
+`presentation.execute.requested`, `.succeeded`, `.denied`, `.failed`, and
+`.cancelled`.
 
 ## Important boundary
 
@@ -64,10 +69,10 @@ the caller-owned runtime.
 ### 1. Harden JavaScript execution
 
 `presentation.execute` intentionally runs code inside the target page and is
-marked externally effectful. Add provider policy hooks, audit records,
-timeouts, cancellation behavior, and a clear distinction between trusted
-presentation code and untrusted agent-authored code. Avoid silently treating
-arbitrary JavaScript as a safe semantic action.
+marked externally effectful. The adapter now enforces provider authorization,
+emits audit events, and bounds execution time. Remaining work is to define a
+clearer trusted-presentation-code versus untrusted-agent-code model so callers
+do not silently treat arbitrary JavaScript as a safe semantic action.
 
 ### 2. Improve document semantics
 
@@ -109,7 +114,7 @@ remain `jangolova/engine-runtime` until a release process exists.
 
 ## Recommended next build order
 
-1. Add policy/audit hooks around `presentation.execute` and capture.
+1. Define the trusted versus untrusted presentation-code model.
 2. Normalize the document schema and semantic `describe` response.
 3. Decide and implement the Three.js common-host path.
 4. Continue with Unity/Unreal attachment, then display-level input.

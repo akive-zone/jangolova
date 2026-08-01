@@ -74,7 +74,10 @@ serving the presentation URL, and supplying the CDP endpoint:
     "options": {
       "policy": {
         "allowedSourceOrigins": ["http://127.0.0.1:8080"],
-        "allowedAssetOrigins": ["self"]
+        "allowedAssetOrigins": ["self"],
+        "authorizedActions": ["presentation.capture", "presentation.execute"],
+        "executeTimeoutMillis": 5000,
+        "captureTimeoutMillis": 10000
       }
     }
   },
@@ -98,7 +101,8 @@ HTML/CSS/JavaScript source for a complete authored surface. Then use
 incremental updates. `presentation.capture` returns a PNG captured by the
 attached browser. Document mutations carry `expectedRevision`; see
 [Web presentation provider handoff](presentation-provider.md) for artifact
-limits, origin policy, and conflict behavior.
+limits, origin policy, sensitive-action authorization, audit events, timeouts,
+and conflict behavior.
 
 WebDriver Classic attaches to an existing caller-owned driver session. The
 target provider creates and later deletes that session:

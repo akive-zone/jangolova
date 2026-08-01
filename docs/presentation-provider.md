@@ -30,7 +30,10 @@ endpoint. The provider may host the reference page in
         "maxJavaScriptBytes": 262144,
         "maxTotalBytes": 1572864,
         "allowedSourceOrigins": ["https://presentation.example"],
-        "allowedAssetOrigins": ["self", "https://assets.example"]
+        "allowedAssetOrigins": ["self", "https://assets.example"],
+        "authorizedActions": ["presentation.capture", "presentation.execute"],
+        "executeTimeoutMillis": 5000,
+        "captureTimeoutMillis": 10000
       }
     }
   },
@@ -63,7 +66,11 @@ Every `web-presentation` connection has an enforced policy. Defaults are:
 - authored or executed JavaScript: 256 KiB;
 - total inline source or structured document: 1.5 MiB;
 - source page: unrestricted unless `allowedSourceOrigins` is configured;
-- loaded assets: `self`, `data:`, and `blob:`.
+- loaded assets: `self`, `data:`, and `blob:`;
+- sensitive actions authorized by policy: `presentation.capture` and
+  `presentation.execute`;
+- `presentation.execute` timeout: five seconds;
+- `presentation.capture` timeout: ten seconds.
 
 Limits count UTF-8 bytes. Each configured limit must be between one byte and
 32 MiB. Origins must be exact HTTP(S) origins without paths, queries,
@@ -71,6 +78,20 @@ fragments, or credentials. When `allowedSourceOrigins` is present, the
 configured `source` must match it. `allowedAssetOrigins` accepts exact HTTP(S)
 origins plus `self`, `data:`, and `blob:`. Supplying an asset list replaces the
 default list.
+
+`authorizedActions` is the provider authorization gate for sensitive
+presentation operations. It currently accepts only `presentation.execute` and
+`presentation.capture`; supplying an empty list denies both. These actions also
+emit provider instance audit events named
+`presentation.execute.requested`, `.succeeded`, `.failed`, `.cancelled`, or
+`.denied`, and the equivalent `presentation.capture.*` names. Audit events do
+not include script source, screenshots, or result payloads.
+
+`executeTimeoutMillis` and `captureTimeoutMillis` must be between 1 and
+120000. The worker enforces these deadlines inside the CDP attachment. On an
+execute timeout it sends Chrome `Runtime.terminateExecution` so a stuck page
+script is interrupted; the adapter also keeps a slightly longer cancellation
+deadline around the worker request.
 
 The worker enforces asset origins through Chromium request interception. This
 is defense in depth for the authored surface, not a replacement for Xallet's
@@ -119,7 +140,9 @@ with a revision conflict and leaves the current document unchanged.
 
 The JavaScript runs inside the caller-owned browser page and is therefore an
 explicit externally-effectful capability. The calling agent system remains
-responsible for authorization and content policy.
+responsible for deciding which sessions receive `presentation.execute`
+authorization. Jangolova enforces the provider-supplied authorization policy,
+records audit events, and bounds execution time.
 
 ## Xallet implementation notes
 
