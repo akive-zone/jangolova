@@ -13,6 +13,7 @@ test("presentation worker attaches through Puppeteer CDP and never launches a ru
   assert.match(source, /Runtime\.terminateExecution/);
   assert.match(source, /presentation\.mount/);
   assert.match(source, /supportedArtifactTransports/);
+  assert.match(source, /headers: connectionHeaders/);
   assert.doesNotMatch(source, /puppeteer\.launch/);
 });
 

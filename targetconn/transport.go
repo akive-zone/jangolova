@@ -1,0 +1,204 @@
+package targetconn
+
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	"time"
+
+	"jangolova/internal/orchestrator"
+)
+
+// HTTPClient returns an isolated transport that applies resolved headers and
+// TLS material. It never mutates http.DefaultTransport.
+func HTTPClient(endpoint orchestrator.TargetEndpoint, timeout time.Duration) (*http.Client, error) {
+	if err := Validate(endpoint); err != nil {
+		return nil, err
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if endpoint.Connection != nil && endpoint.Connection.TLS != nil {
+		parsed, err := url.Parse(endpoint.URL)
+		if err != nil || parsed.Scheme != "https" {
+			return nil, errors.New("TLS connection material requires an https endpoint")
+		}
+		config, err := tlsConfig(endpoint.Connection.TLS)
+		if err != nil {
+			return nil, err
+		}
+		transport.TLSClientConfig = config
+	}
+	var roundTripper http.RoundTripper = transport
+	if endpoint.Connection != nil {
+		roundTripper = &materialTransport{base: transport, material: endpoint.Connection}
+	}
+	return &http.Client{Timeout: timeout, Transport: roundTripper}, nil
+}
+
+// Headers returns a defensive copy suitable for an adapter-private connection
+// handshake.
+func Headers(endpoint orchestrator.TargetEndpoint) map[string]string {
+	if endpoint.Connection == nil {
+		return nil
+	}
+	values := make(map[string]string, len(endpoint.Connection.Headers))
+	for name, value := range endpoint.Connection.Headers {
+		values[name] = value
+	}
+	return values
+}
+
+type materialTransport struct {
+	base     http.RoundTripper
+	material *orchestrator.EndpointConnection
+}
+
+func (t *materialTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if !t.material.ExpiresAt.IsZero() && !t.material.ExpiresAt.After(time.Now()) {
+		return nil, errors.New("target connection material has expired")
+	}
+	cloned := request.Clone(request.Context())
+	cloned.Header = request.Header.Clone()
+	for name, value := range t.material.Headers {
+		cloned.Header.Set(name, value)
+	}
+	return t.base.RoundTrip(cloned)
+}
+
+func (t *materialTransport) CloseIdleConnections() {
+	if closer, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
+}
+
+func tlsConfig(material *orchestrator.TLSConnection) (*tls.Config, error) {
+	config := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: material.ServerName}
+	if material.CAFile != "" {
+		contents, err := os.ReadFile(material.CAFile)
+		if err != nil {
+			return nil, errors.New("read target TLS CA file")
+		}
+		roots, err := x509.SystemCertPool()
+		if err != nil || roots == nil {
+			roots = x509.NewCertPool()
+		}
+		if !roots.AppendCertsFromPEM(contents) {
+			return nil, errors.New("target TLS CA file contains no certificates")
+		}
+		config.RootCAs = roots
+	}
+	if material.ClientCertificateFile != "" {
+		certificate, err := tls.LoadX509KeyPair(material.ClientCertificateFile, material.ClientKeyFile)
+		if err != nil {
+			return nil, errors.New("load target TLS client certificate")
+		}
+		config.Certificates = []tls.Certificate{certificate}
+	}
+	return config, nil
+}
+
+// NodeEnvironment configures a child Node.js process for a private CA. CDP
+// worker libraries accept headers but do not expose a portable client-certificate
+// hook, so mTLS is rejected explicitly instead of being silently ignored.
+func NodeEnvironment(endpoint orchestrator.TargetEndpoint, current []string) ([]string, error) {
+	if err := Validate(endpoint); err != nil {
+		return nil, err
+	}
+	if endpoint.Connection == nil || endpoint.Connection.TLS == nil {
+		return current, nil
+	}
+	material := endpoint.Connection.TLS
+	if material.ClientCertificateFile != "" {
+		return nil, errors.New("CDP worker does not support TLS client certificates")
+	}
+	parsed, err := url.Parse(endpoint.URL)
+	if err != nil || parsed.Scheme != "wss" && parsed.Scheme != "https" {
+		return nil, errors.New("TLS connection material requires a wss or https CDP endpoint")
+	}
+	if material.ServerName != "" && !strings.EqualFold(material.ServerName, parsed.Hostname()) {
+		return nil, fmt.Errorf("CDP worker TLS serverName must match endpoint hostname %q", parsed.Hostname())
+	}
+	if material.CAFile == "" {
+		return current, nil
+	}
+	return replaceEnvironment(current, "NODE_EXTRA_CA_CERTS", material.CAFile), nil
+}
+
+func replaceEnvironment(current []string, name, value string) []string {
+	prefix := name + "="
+	result := make([]string, 0, len(current)+1)
+	for _, item := range current {
+		if !strings.HasPrefix(item, prefix) {
+			result = append(result, item)
+		}
+	}
+	return append(result, prefix+value)
+}
+
+func RedactString(message string, target orchestrator.EngineTarget) string {
+	for _, secret := range stableSecretValues(target) {
+		message = strings.ReplaceAll(message, secret, "[REDACTED]")
+	}
+	return message
+}
+
+// RedactJSON walks JSON string values so secrets containing JSON escape
+// characters are still removed without corrupting the response document.
+func RedactJSON(document json.RawMessage, target orchestrator.EngineTarget) json.RawMessage {
+	var value any
+	decoder := json.NewDecoder(strings.NewReader(string(document)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return json.RawMessage(RedactString(string(document), target))
+	}
+	redactJSONValue(value, target)
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return json.RawMessage(`null`)
+	}
+	return encoded
+}
+
+func redactJSONValue(value any, target orchestrator.EngineTarget) {
+	switch typed := value.(type) {
+	case map[string]any:
+		for name, item := range typed {
+			if text, ok := item.(string); ok {
+				typed[name] = RedactString(text, target)
+			} else {
+				redactJSONValue(item, target)
+			}
+		}
+	case []any:
+		for index, item := range typed {
+			if text, ok := item.(string); ok {
+				typed[index] = RedactString(text, target)
+			} else {
+				redactJSONValue(item, target)
+			}
+		}
+	}
+}
+
+type redactingError struct{ message string }
+
+func (e redactingError) Error() string { return e.message }
+
+func RedactContextError(err error, target orchestrator.EngineTarget) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	return redactingError{message: RedactString(err.Error(), target)}
+}

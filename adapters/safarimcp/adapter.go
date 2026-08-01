@@ -24,6 +24,7 @@ import (
 	"jangolova/internal/bridge"
 	"jangolova/internal/manifest"
 	"jangolova/internal/orchestrator"
+	"jangolova/targetconn"
 )
 
 const defaultProtocolVersion = "2025-06-18"
@@ -125,11 +126,15 @@ func (Adapter) Connect(
 			return nil, fmt.Errorf("Safari MCP bearer token environment variable %s is empty", name)
 		}
 	}
+	client, err := targetconn.HTTPClient(endpoint, timeout)
+	if err != nil {
+		return nil, err
+	}
 	running := &instance{
 		endpoint:        endpointURL,
 		protocolVersion: protocolVersion,
 		bearerToken:     bearerToken,
-		client:          &http.Client{Timeout: timeout},
+		client:          client,
 		tools:           make(map[string]tool),
 		lifecycle:       make(chan orchestrator.EngineEvent, 1),
 	}

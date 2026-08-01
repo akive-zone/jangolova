@@ -21,6 +21,7 @@ import (
 	"jangolova/internal/bridge"
 	"jangolova/internal/manifest"
 	"jangolova/internal/orchestrator"
+	"jangolova/targetconn"
 )
 
 const elementKey = "element-6066-11e4-a52e-4f735466cecf"
@@ -111,11 +112,15 @@ func (a Adapter) Connect(
 			return nil, fmt.Errorf("invalid WebDriver requestTimeout %q", config.RequestTimeout)
 		}
 	}
+	client, err := targetconn.HTTPClient(endpoint, timeout)
+	if err != nil {
+		return nil, err
+	}
 	running := &instance{
 		implementation: a.name(),
 		baseURL:        baseURL,
 		sessionID:      sessionID,
-		client:         &http.Client{Timeout: timeout},
+		client:         client,
 		lifecycle:      make(chan orchestrator.EngineEvent, 1),
 	}
 	if _, err := running.command(ctx, http.MethodGet, "/url", nil); err != nil {

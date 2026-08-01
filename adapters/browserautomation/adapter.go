@@ -23,6 +23,7 @@ import (
 	"jangolova/internal/bridge"
 	"jangolova/internal/manifest"
 	"jangolova/internal/orchestrator"
+	"jangolova/targetconn"
 )
 
 const defaultWorkerPath = "scripts/browser-worker.mjs"
@@ -117,6 +118,9 @@ func (a Adapter) Connect(
 	if err := validateEndpoint(endpoint.URL, targetProtocol); err != nil {
 		return nil, err
 	}
+	if err := targetconn.Validate(endpoint); err != nil {
+		return nil, err
+	}
 	if targetProtocol == "webdriver-bidi" && !strings.HasPrefix(endpoint.URL, "ws://") && !strings.HasPrefix(endpoint.URL, "wss://") {
 		return nil, errors.New("WebDriver BiDi target endpoint must use ws or wss")
 	}
@@ -136,6 +140,10 @@ func (a Adapter) Connect(
 		return nil, err
 	}
 	command := exec.Command(nodePath, workerPath, "--adapter", a.implementation)
+	command.Env, err = targetconn.NodeEnvironment(endpoint, os.Environ())
+	if err != nil {
+		return nil, err
+	}
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("open %s worker input: %w", a.implementation, err)
@@ -145,7 +153,7 @@ func (a Adapter) Connect(
 		return nil, fmt.Errorf("open %s worker output: %w", a.implementation, err)
 	}
 	stderr := &lockedBuffer{}
-	command.Stderr = io.MultiWriter(os.Stderr, stderr)
+	command.Stderr = stderr
 	running := &instance{
 		implementation: a.implementation,
 		command:        command,
@@ -161,9 +169,10 @@ func (a Adapter) Connect(
 	go running.readResponses(stdout)
 	go running.wait()
 
-	connectParams, _ := json.Marshal(map[string]string{
+	connectParams, _ := json.Marshal(map[string]any{
 		"endpoint": endpoint.URL,
 		"protocol": targetProtocol,
+		"headers":  targetconn.Headers(endpoint),
 	})
 	result, err := running.request(ctx, "connect", connectParams)
 	if err != nil {

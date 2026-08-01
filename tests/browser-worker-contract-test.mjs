@@ -18,6 +18,8 @@ test("browser worker owns interaction libraries but not a browser runtime", asyn
   assert.match(worker, /chromium\.connectOverCDP/);
   assert.match(worker, /puppeteer\.connect/);
   assert.match(worker, /protocol: "webDriverBiDi"/);
+  assert.match(worker, /connectOverCDP\(endpoint, \{ headers:/);
+  assert.match(worker, /headers: safeHeaders\(headers\)/);
   assert.doesNotMatch(worker, /\.launch\s*\(/);
   for (const method of ["hello", "capabilities", "describe", "act", "events"]) {
     assert.ok(worker.includes(`method === "${method}"`), `missing ${method}`);

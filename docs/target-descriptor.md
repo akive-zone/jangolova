@@ -29,10 +29,10 @@ supervisor, a VM manager, Xallet, or another orchestration system.
 ```
 
 `credentialRef` and `tlsRef` are opaque references, never inline secrets.
-Jangolova preserves them for an adapter or deployment-specific credential
-resolver. Unless an adapter documents reference support, the caller must give
-it an endpoint that is already directly usable—for example through an
-authenticated relay, pre-authorized URL, or caller-owned tunnel.
+Jangolova resolves them through its deployment-neutral
+[target connection security layer](target-connection-security.md) immediately
+before connecting the selected adapter. The caller controls the resolver and
+the underlying secret storage.
 
 The endpoint URL must be reachable from Jangolova's network namespace. Address
 translation, tunnels, firewall rules, service discovery, and runtime lifecycle

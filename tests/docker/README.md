@@ -53,6 +53,8 @@ The presentation fixture co-locates test-owned Xvfb, Chromium, local artifact
 servers, and Jangolova to prove the direct-container mode without Xallet. It
 supplies Chromium through the generic target descriptor, lets Jangolova select
 the presentation engine from the CDP protocol and required capabilities,
+resolves an expiring credential reference, authenticates through a test-owned
+CDP relay,
 mounts a versioned artifact between two localhost origins, verifies state and
 artifact revisions, and leaves the target components alive after disconnect.
 

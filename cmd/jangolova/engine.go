@@ -18,6 +18,7 @@ import (
 	"jangolova/internal/engineprovider"
 	"jangolova/internal/manifest"
 	"jangolova/internal/orchestrator"
+	"jangolova/targetconn"
 )
 
 func enginesCommand(args []string) error {
@@ -65,6 +66,10 @@ func connectEngineCommand(args []string) error {
 	flags.Var(&handles, "handle", "opaque caller-owned target handle in NAME=VALUE form; may be repeated")
 	var requiredCapabilities stringFlags
 	flags.Var(&requiredCapabilities, "require-capability", "capability required when selecting an adapter; may be repeated")
+	var credentialRefs referenceFlags
+	flags.Var(&credentialRefs, "credential-ref", "endpoint credential reference in NAME=REFERENCE form; may be repeated")
+	var tlsRefs referenceFlags
+	flags.Var(&tlsRefs, "tls-ref", "endpoint TLS reference in NAME=REFERENCE form; may be repeated")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -104,6 +109,18 @@ func connectEngineCommand(args []string) error {
 	if !ok {
 		return fmt.Errorf("interaction engine %q is not registered", selectedAdapter)
 	}
+	targetEndpoints := endpoints.clone()
+	if err := applyEndpointReferences(targetEndpoints, credentialRefs, tlsRefs); err != nil {
+		return err
+	}
+	target, release, err := targetconn.Prepare(context.Background(), targetconn.DefaultResolver(), orchestrator.EngineTarget{
+		Kind: strings.TrimSpace(*targetKind), Endpoints: targetEndpoints,
+		Handles: orchestrator.EngineHandles(handles.clone()),
+	})
+	if err != nil {
+		return err
+	}
+	defer release(context.Background())
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -112,13 +129,9 @@ func connectEngineCommand(args []string) error {
 		RequiredCapabilities: append([]string(nil), requiredCapabilities...),
 		Source:               strings.TrimSpace(*source),
 		Options:              options,
-	}, orchestrator.EngineTarget{
-		Kind:      strings.TrimSpace(*targetKind),
-		Endpoints: endpoints.clone(),
-		Handles:   orchestrator.EngineHandles(handles.clone()),
-	})
+	}, target)
 	if err != nil {
-		return fmt.Errorf("connect interaction engine: %w", err)
+		return fmt.Errorf("connect interaction engine: %w", targetconn.Redact(err, target))
 	}
 	if instance == nil {
 		return errors.New("connect interaction engine: adapter returned no instance")
@@ -134,6 +147,7 @@ func connectEngineCommand(args []string) error {
 		health = provider.EngineHealth(healthCtx)
 		cancel()
 	}
+	health.Message = targetconn.RedactString(health.Message, target)
 	result := engineprovider.Instance{
 		APIVersion: engineprovider.APIVersion,
 		InstanceID: "standalone",
@@ -162,6 +176,7 @@ func connectEngineCommand(args []string) error {
 					events = nil
 					continue
 				}
+				event.Message = targetconn.RedactString(event.Message, target)
 				if err := json.NewEncoder(os.Stdout).Encode(engineEventValue(event)); err != nil {
 					_ = instance.Disconnect(context.Background())
 					return err
@@ -178,7 +193,10 @@ func connectEngineCommand(args []string) error {
 	disconnectCtx, cancel := context.WithTimeout(context.Background(), *disconnectTimeout)
 	defer cancel()
 	if err := instance.Disconnect(disconnectCtx); err != nil && terminal == nil {
-		return err
+		return targetconn.Redact(err, target)
+	}
+	if err := release(disconnectCtx); err != nil {
+		return errors.New("release target connection material")
 	}
 	if terminal != nil && terminal.Status == "failed" {
 		return fmt.Errorf("interaction engine failed: %s", terminal.Message)
@@ -202,6 +220,45 @@ func decodeEngineOptions(value string) (json.RawMessage, error) {
 var handleFlagNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._-]{0,127}$`)
 
 type endpointFlags []orchestrator.TargetEndpoint
+
+type referenceFlags map[string]string
+
+func (r *referenceFlags) String() string { return fmt.Sprint(map[string]string(*r)) }
+func (r *referenceFlags) Set(value string) error {
+	name, reference, ok := strings.Cut(value, "=")
+	if !ok || !handleFlagNamePattern.MatchString(name) || !handleFlagNamePattern.MatchString(reference) {
+		return errors.New("connection reference must use NAME=REFERENCE")
+	}
+	if *r == nil {
+		*r = referenceFlags{}
+	}
+	if _, exists := (*r)[name]; exists {
+		return fmt.Errorf("connection reference for endpoint %s is repeated", name)
+	}
+	(*r)[name] = reference
+	return nil
+}
+
+func applyEndpointReferences(endpoints []orchestrator.TargetEndpoint, credentials, tlsValues referenceFlags) error {
+	found := make(map[string]bool, len(endpoints))
+	for index := range endpoints {
+		endpoint := &endpoints[index]
+		found[endpoint.Name] = true
+		endpoint.CredentialRef = credentials[endpoint.Name]
+		endpoint.TLSRef = tlsValues[endpoint.Name]
+	}
+	for name := range credentials {
+		if !found[name] {
+			return fmt.Errorf("credential reference endpoint %q was not supplied", name)
+		}
+	}
+	for name := range tlsValues {
+		if !found[name] {
+			return fmt.Errorf("TLS reference endpoint %q was not supplied", name)
+		}
+	}
+	return nil
+}
 
 type stringFlags []string
 

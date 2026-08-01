@@ -3,6 +3,7 @@ package engineprovider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"jangolova/internal/manifest"
 	"jangolova/internal/orchestrator"
+	"jangolova/targetconn"
 )
 
 type fakeEngineAdapter struct {
@@ -19,6 +21,7 @@ type fakeEngineAdapter struct {
 	spec         manifest.EngineSpec
 	instance     *fakeEngineInstance
 	capabilities []string
+	callResult   string
 }
 
 func (f *fakeEngineAdapter) Connect(
@@ -28,7 +31,7 @@ func (f *fakeEngineAdapter) Connect(
 ) (orchestrator.EngineInstance, error) {
 	f.spec = spec
 	f.target = target
-	f.instance = &fakeEngineInstance{events: make(chan orchestrator.EngineEvent, 4)}
+	f.instance = &fakeEngineInstance{events: make(chan orchestrator.EngineEvent, 4), callResult: f.callResult}
 	return f.instance, nil
 }
 
@@ -40,6 +43,7 @@ type fakeEngineInstance struct {
 	disconnected bool
 	events       chan orchestrator.EngineEvent
 	once         sync.Once
+	callResult   string
 }
 
 func (f *fakeEngineInstance) Disconnect(context.Context) error {
@@ -51,6 +55,9 @@ func (f *fakeEngineInstance) Disconnect(context.Context) error {
 func (f *fakeEngineInstance) EngineEvents() <-chan orchestrator.EngineEvent { return f.events }
 func (f *fakeEngineInstance) EngineCapabilities() []string                  { return []string{"describe", "act"} }
 func (f *fakeEngineInstance) Call(_ context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	if f.callResult != "" {
+		return json.Marshal(map[string]string{"value": f.callResult})
+	}
 	return json.Marshal(map[string]any{"method": method, "params": params})
 }
 
@@ -69,6 +76,75 @@ func (healthEngineAdapter) Connect(context.Context, manifest.EngineSpec, orchest
 func (healthEngineInstance) Disconnect(context.Context) error { return nil }
 func (healthEngineInstance) EngineHealth(context.Context) orchestrator.EngineHealth {
 	return orchestrator.EngineHealth{Status: orchestrator.EngineHealthUnhealthy, Message: "fixture probe failed", ObservedAt: time.Now().UTC()}
+}
+
+type leakingEngineAdapter struct{}
+
+func (leakingEngineAdapter) Connect(context.Context, manifest.EngineSpec, orchestrator.EngineTarget) (orchestrator.EngineInstance, error) {
+	return nil, errors.New("remote handshake echoed Bearer resolved-secret")
+}
+
+func TestServiceRedactsResolvedCredentialFromAdapterFailure(t *testing.T) {
+	registry := orchestrator.NewRegistry()
+	if err := registry.RegisterEngine("leaking", leakingEngineAdapter{}); err != nil {
+		t.Fatal(err)
+	}
+	released := 0
+	resolver := targetconn.ResolverFunc(func(context.Context, targetconn.Request) (targetconn.Material, error) {
+		return targetconn.Material{
+			Headers:   map[string]string{"Authorization": "Bearer resolved-secret"},
+			ExpiresAt: time.Now().Add(time.Minute),
+			Release:   func(context.Context) error { released++; return nil },
+		}, nil
+	})
+	service, err := NewService(registry, "test-token", WithTargetResolver(resolver))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := performRequest(service.Routes(), http.MethodPost, "/v1/instances", `{
+		"apiVersion":"interaction.engine/v1alpha1","instanceId":"redaction-one",
+		"engine":{"adapter":"leaking"},
+		"target":{"kind":"browser","endpoints":[{"name":"control","protocol":"cdp","url":"wss://browser.example/control","credentialRef":"session"}]}
+	}`)
+	if response.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "resolved-secret") || !strings.Contains(response.Body.String(), "[REDACTED]") {
+		t.Fatalf("response was not redacted: %s", response.Body.String())
+	}
+	if released != 1 {
+		t.Fatalf("release count = %d", released)
+	}
+}
+
+func TestServiceRedactsResolvedCredentialFromSuccessfulResult(t *testing.T) {
+	registry := orchestrator.NewRegistry()
+	adapter := &fakeEngineAdapter{callResult: "Bearer resolved-secret"}
+	if err := registry.RegisterEngine("echo", adapter); err != nil {
+		t.Fatal(err)
+	}
+	resolver := targetconn.ResolverFunc(func(context.Context, targetconn.Request) (targetconn.Material, error) {
+		return targetconn.Material{
+			Headers:   map[string]string{"Authorization": "Bearer resolved-secret"},
+			ExpiresAt: time.Now().Add(time.Minute),
+		}, nil
+	})
+	service, err := NewService(registry, "test-token", WithTargetResolver(resolver))
+	if err != nil {
+		t.Fatal(err)
+	}
+	connected := performRequest(service.Routes(), http.MethodPost, "/v1/instances", `{
+		"apiVersion":"interaction.engine/v1alpha1","instanceId":"redaction-result",
+		"engine":{"adapter":"echo"},
+		"target":{"kind":"browser","endpoints":[{"name":"control","protocol":"cdp","url":"wss://browser.example/control","credentialRef":"session"}]}
+	}`)
+	if connected.Code != http.StatusCreated {
+		t.Fatalf("connect status = %d: %s", connected.Code, connected.Body.String())
+	}
+	response := performRequest(service.Routes(), http.MethodPost, "/v1/instances/redaction-result/call", `{"method":"describe","params":{}}`)
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "resolved-secret") || !strings.Contains(response.Body.String(), "[REDACTED]") {
+		t.Fatalf("response was not redacted: %d %s", response.Code, response.Body.String())
+	}
 }
 
 func TestServiceConnectsCallsAndDisconnectsEngine(t *testing.T) {
@@ -173,7 +249,22 @@ func TestServiceAutomaticallySelectsEngineFromCallerSuppliedTarget(t *testing.T)
 	if err := registry.RegisterEngine("web-presentation", presentation); err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewService(registry, "test-token")
+	releaseCount := 0
+	resolver := targetconn.ResolverFunc(func(_ context.Context, request targetconn.Request) (targetconn.Material, error) {
+		switch request.Kind {
+		case targetconn.CredentialReference:
+			return targetconn.Material{
+				Headers:   map[string]string{"Authorization": "Bearer resolved-secret"},
+				ExpiresAt: time.Now().Add(time.Hour),
+				Release:   func(context.Context) error { releaseCount++; return nil },
+			}, nil
+		case targetconn.TLSReference:
+			return targetconn.Material{TLS: &orchestrator.TLSConnection{CAFile: "/caller/ca.pem"}}, nil
+		default:
+			return targetconn.Material{}, targetconn.ErrReferenceNotFound
+		}
+	})
+	service, err := NewService(registry, "test-token", WithTargetResolver(resolver))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,6 +310,16 @@ func TestServiceAutomaticallySelectsEngineFromCallerSuppliedTarget(t *testing.T)
 	endpoint := presentation.target.Endpoints[0]
 	if endpoint.URL != "wss://browser.example/control/42" || endpoint.CredentialRef != "browser-session-42" || endpoint.TLSRef != "browser-cluster-ca" || endpoint.Metadata["network.scope"] != "private" {
 		t.Fatalf("forwarded endpoint = %#v", endpoint)
+	}
+	if endpoint.Connection == nil || endpoint.Connection.Headers["Authorization"] != "Bearer resolved-secret" || endpoint.Connection.TLS.CAFile != "/caller/ca.pem" {
+		t.Fatalf("resolved connection = %#v", endpoint.Connection)
+	}
+	if strings.Contains(response.Body.String(), "resolved-secret") {
+		t.Fatal("connection secret leaked in provider response")
+	}
+	response = performRequest(service.Routes(), http.MethodDelete, "/v1/instances/remote-presentation", "")
+	if response.Code != http.StatusNoContent || releaseCount != 1 {
+		t.Fatalf("disconnect status = %d, releases = %d", response.Code, releaseCount)
 	}
 }
 

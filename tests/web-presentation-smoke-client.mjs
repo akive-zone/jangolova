@@ -6,9 +6,21 @@ const providerURL = process.env.JANGOLOVA_PROVIDER_URL || "http://127.0.0.1:7392
 const token = process.env.JANGOLOVA_PROVIDER_TOKEN;
 const cdpURL = process.env.PRESENTATION_CDP_URL || "http://127.0.0.1:9224";
 const sourceURL = process.env.PRESENTATION_SOURCE_URL || "http://127.0.0.1:8081/";
+const authenticatedCDPBase = process.env.PRESENTATION_AUTHENTICATED_CDP_BASE;
+const credentialRef = process.env.PRESENTATION_CREDENTIAL_REF;
 const instanceID = "presentation-smoke";
 
 assert.ok(token, "JANGOLOVA_PROVIDER_TOKEN is required");
+
+let targetCDPURL = cdpURL;
+if (authenticatedCDPBase) {
+  const discovery = await fetch(`${cdpURL.replace(/\/$/, "")}/json/version`).then((response) => response.json());
+  const discovered = new URL(discovery.webSocketDebuggerUrl);
+  const relay = new URL(authenticatedCDPBase);
+  relay.pathname = discovered.pathname;
+  relay.search = discovered.search;
+  targetCDPURL = relay.toString();
+}
 
 async function request(path, { method = "GET", body } = {}) {
   const response = await fetch(`${providerURL}${path}`, {
@@ -63,7 +75,8 @@ const { value: connected } = await request("/v1/instances", {
       endpoints: [{
         name: "cdp",
         protocol: "cdp",
-        url: cdpURL,
+        url: targetCDPURL,
+        ...(credentialRef ? { credentialRef } : {}),
         audience: "engine",
         metadata: { "network.scope": "container-private" },
       }],

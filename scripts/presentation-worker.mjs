@@ -24,7 +24,7 @@ async function handleLine(line) {
 }
 
 async function dispatch(method, params) {
-  if (method === "connect") return connect(params.endpoint, params.source, params.policy);
+  if (method === "connect") return connect(params.endpoint, params.source, params.policy, params.headers);
   if (method === "disconnect") return disconnect();
   if (method === "health") return { connected: isConnected() && Boolean(page) };
   requireConnection();
@@ -52,11 +52,13 @@ async function dispatch(method, params) {
   throw new Error(`unsupported interaction method ${method}`);
 }
 
-async function connect(endpoint, source, policy = {}) {
+async function connect(endpoint, source, policy = {}, headers = {}) {
   if (typeof endpoint !== "string" || endpoint.length === 0) throw new Error("CDP endpoint is required");
   activePolicy = policy || {};
   const { default: puppeteer } = await import("puppeteer-core");
-  browser = await puppeteer.connect(endpoint.startsWith("ws") ? { browserWSEndpoint: endpoint, protocol: "cdp" } : { browserURL: endpoint, protocol: "cdp" });
+  const connectionHeaders = safeHeaders(headers);
+  const connectionEndpoint = await resolveCDPEndpoint(endpoint, connectionHeaders);
+  browser = await puppeteer.connect({ browserWSEndpoint: connectionEndpoint, protocol: "cdp", headers: connectionHeaders });
   browser.on("disconnected", () => { disconnected = true; });
   const pages = await browser.pages();
   page = pages.at(-1) || await browser.newPage();
@@ -67,6 +69,23 @@ async function connect(endpoint, source, policy = {}) {
   if (!ready) throw new Error("active page does not expose window.jangolova presentation bridge");
   const capabilities = await page.evaluate(() => (window.jangolova.capabilities?.() || []).map((item) => item.name));
   return { capabilities };
+}
+async function resolveCDPEndpoint(endpoint, headers) {
+  if (endpoint.startsWith("ws://") || endpoint.startsWith("wss://")) return endpoint;
+  const discoveryURL = new URL("/json/version", endpoint);
+  const response = await fetch(discoveryURL, { headers });
+  if (!response.ok) throw new Error(`CDP discovery returned HTTP ${response.status}`);
+  const discovery = await response.json();
+  if (typeof discovery.webSocketDebuggerUrl !== "string" || !discovery.webSocketDebuggerUrl) {
+    throw new Error("CDP discovery returned no webSocketDebuggerUrl");
+  }
+  return discovery.webSocketDebuggerUrl;
+}
+function safeHeaders(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([name, item]) => (
+    typeof name === "string" && typeof item === "string" && !/[\r\n\0]/.test(name + item)
+  )));
 }
 
 async function disconnect() { if (cdpSession?.detach) await cdpSession.detach().catch(() => {}); if (browser?.disconnect) browser.disconnect(); disconnected = true; return { disconnected: true }; }

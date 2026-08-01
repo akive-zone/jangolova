@@ -34,6 +34,14 @@ Automatic selection uses endpoint protocols and required capabilities only;
 native, container, VM, remote, and Xallet-owned targets share the same path.
 See [target-descriptor.md](target-descriptor.md).
 
+Opaque credential and TLS references are now resolved immediately before
+adapter connection through the deployment-neutral layer documented in
+[target-connection-security.md](target-connection-security.md). Resolved
+headers never enter provider payloads or command arguments, are redacted from
+outbound errors/events/health, and are released on disconnect. The direct
+container fixture puts Chromium behind an authenticated CDP relay and proves
+the complete reference-resolution path.
+
 Validation already run:
 
 ```bash

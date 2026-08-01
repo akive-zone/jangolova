@@ -58,6 +58,10 @@ jangolova serve-engine-provider --bind 127.0.0.1:7391
 The provider accepts caller-owned targets, creates interaction instances, and
 exposes their semantic calls at `POST /v1/instances/{id}/call`.
 
+Connection references, expiry, private certificate authorities, and output
+redaction are documented in
+[target connection security](docs/target-connection-security.md).
+
 ## Ownership boundary
 
 ```text

@@ -24,6 +24,27 @@ type TargetEndpoint struct {
 	TLSRef        string
 	Audience      string
 	Metadata      map[string]string
+	// Connection is resolved in-memory connection material. It is never part
+	// of the provider protocol, manifests, events, logs, or API responses.
+	Connection *EndpointConnection
+}
+
+// EndpointConnection carries secret connection material to an adapter after
+// reference resolution. Adapters must not include any of these values in
+// errors, events, command arguments, or persisted state.
+type EndpointConnection struct {
+	Headers   map[string]string
+	TLS       *TLSConnection
+	ExpiresAt time.Time
+}
+
+// TLSConnection references caller-managed TLS files. The resolver owns their
+// lifecycle; adapters may read them only while the engine instance is alive.
+type TLSConnection struct {
+	CAFile                string
+	ClientCertificateFile string
+	ClientKeyFile         string
+	ServerName            string
 }
 
 // EngineHandles contains opaque target handles supplied and owned by the

@@ -6,10 +6,35 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"jangolova/internal/manifest"
 	"jangolova/internal/orchestrator"
 )
+
+func TestAdapterPassesResolvedHeadersToRemoteCDPWorker(t *testing.T) {
+	worker, err := filepath.Abs("../../tests/connection-material-worker.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	options, _ := json.Marshal(map[string]string{"workerPath": worker})
+	instance, err := Playwright().Connect(context.Background(), manifest.EngineSpec{Options: options}, orchestrator.EngineTarget{
+		Kind: "browser",
+		Endpoints: []orchestrator.TargetEndpoint{{
+			Name: "control", Protocol: "cdp", URL: "wss://browser.remote.example/devtools/browser/42",
+			Connection: &orchestrator.EndpointConnection{
+				Headers:   map[string]string{"Authorization": "Bearer fixture-secret"},
+				ExpiresAt: time.Now().Add(time.Minute),
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := instance.Disconnect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestAdapterRequiresCallerOwnedBrowserTarget(t *testing.T) {
 	t.Parallel()

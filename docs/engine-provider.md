@@ -9,6 +9,8 @@ The caller may set `engine.adapter` to `auto` and supply a formal
 `interaction.target/v1alpha1` descriptor. Jangolova selects by protocol and
 required capabilities, never by target location. See
 [Caller-supplied interaction targets](target-descriptor.md).
+Opaque credential and TLS references use the secret-safe
+[target connection security layer](target-connection-security.md).
 
 ```bash
 export JANGOLOVA_PROVIDER_TOKEN="a-random-session-secret"

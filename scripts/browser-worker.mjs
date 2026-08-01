@@ -45,7 +45,7 @@ async function handleLine(line) {
 }
 
 async function dispatch(method, params) {
-  if (method === "connect") return connect(params.endpoint, params.protocol);
+  if (method === "connect") return connect(params.endpoint, params.protocol, params.headers);
   if (method === "disconnect") return disconnect();
   if (method === "health") return { connected: isConnected() };
   requireConnection();
@@ -63,21 +63,20 @@ async function dispatch(method, params) {
   throw new Error(`unsupported interaction method ${method}`);
 }
 
-async function connect(endpoint, protocol = "cdp") {
+async function connect(endpoint, protocol = "cdp", headers = {}) {
   if (typeof endpoint !== "string" || endpoint.length === 0) {
     throw new Error("caller-owned browser endpoint is required");
   }
   if (adapter === "playwright") {
     if (protocol !== "cdp") throw new Error("Playwright attachment currently requires CDP");
     const { chromium } = await import("playwright-core");
-    browser = await chromium.connectOverCDP(endpoint);
+    browser = await chromium.connectOverCDP(endpoint, { headers: safeHeaders(headers) });
   } else {
     const { default: puppeteer } = await import("puppeteer-core");
+    const connectionEndpoint = protocol === "cdp" ? await resolveCDPEndpoint(endpoint, headers) : endpoint;
     const option = protocol === "webdriver-bidi"
-      ? { browserWSEndpoint: endpoint, protocol: "webDriverBiDi" }
-      : endpoint.startsWith("ws")
-        ? { browserWSEndpoint: endpoint, protocol: "cdp" }
-        : { browserURL: endpoint, protocol: "cdp" };
+      ? { browserWSEndpoint: connectionEndpoint, protocol: "webDriverBiDi", headers: safeHeaders(headers) }
+      : { browserWSEndpoint: connectionEndpoint, protocol: "cdp", headers: safeHeaders(headers) };
     browser = await puppeteer.connect(option);
   }
   browser.on("disconnected", () => {
@@ -86,6 +85,25 @@ async function connect(endpoint, protocol = "cdp") {
   });
   appendEvent("browser.connected", { adapter, protocol });
   return { capabilities: capabilities.map((item) => item.name) };
+}
+
+async function resolveCDPEndpoint(endpoint, headers) {
+  if (endpoint.startsWith("ws://") || endpoint.startsWith("wss://")) return endpoint;
+  const discoveryURL = new URL("/json/version", endpoint);
+  const response = await fetch(discoveryURL, { headers: safeHeaders(headers) });
+  if (!response.ok) throw new Error(`CDP discovery returned HTTP ${response.status}`);
+  const discovery = await response.json();
+  if (typeof discovery.webSocketDebuggerUrl !== "string" || !discovery.webSocketDebuggerUrl) {
+    throw new Error("CDP discovery returned no webSocketDebuggerUrl");
+  }
+  return discovery.webSocketDebuggerUrl;
+}
+
+function safeHeaders(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([name, item]) => (
+    typeof name === "string" && typeof item === "string" && !/[\r\n\0]/.test(name + item)
+  )));
 }
 
 async function disconnect() {

@@ -17,6 +17,7 @@ import (
 	"jangolova/internal/bridge"
 	"jangolova/internal/manifest"
 	"jangolova/internal/orchestrator"
+	"jangolova/targetconn"
 )
 
 var instanceIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
@@ -29,33 +30,47 @@ type Service struct {
 	mu        sync.Mutex
 	registry  *orchestrator.Registry
 	token     string
+	resolver  targetconn.Resolver
 	instances map[string]*runningInstance
 }
 
 type runningInstance struct {
-	adapter   string
-	status    string
-	health    Health
-	instance  orchestrator.EngineInstance
-	events    []InstanceEvent
-	nextEvent uint64
+	adapter    string
+	status     string
+	health     Health
+	instance   orchestrator.EngineInstance
+	release    func(context.Context) error
+	redact     func(string) string
+	redactJSON func(json.RawMessage) json.RawMessage
+	events     []InstanceEvent
+	nextEvent  uint64
 }
 
-func NewService(
-	registry *orchestrator.Registry,
-	token string,
-) (*Service, error) {
+type ServiceOption func(*Service)
+
+func WithTargetResolver(resolver targetconn.Resolver) ServiceOption {
+	return func(service *Service) { service.resolver = resolver }
+}
+
+func NewService(registry *orchestrator.Registry, token string, options ...ServiceOption) (*Service, error) {
 	if registry == nil {
 		return nil, errors.New("engine provider registry is required")
 	}
 	if strings.TrimSpace(token) == "" {
 		return nil, errors.New("engine provider token is required")
 	}
-	return &Service{
+	service := &Service{
 		registry:  registry,
 		token:     token,
+		resolver:  targetconn.DefaultResolver(),
 		instances: make(map[string]*runningInstance),
-	}, nil
+	}
+	for _, option := range options {
+		if option != nil {
+			option(service)
+		}
+	}
+	return service, nil
 }
 
 func (s *Service) Routes() http.Handler {
@@ -183,20 +198,36 @@ func (s *Service) handleInstances(w http.ResponseWriter, r *http.Request) {
 			Audience: endpoint.Audience, Metadata: cloneValues(endpoint.Metadata),
 		})
 	}
-	instance, err := adapter.Connect(r.Context(), manifest.EngineSpec{
-		Adapter:              adapterName,
-		RequiredCapabilities: append([]string(nil), request.Engine.RequiredCapabilities...),
-		Source:               request.Engine.Source,
-		Options:              request.Engine.Options,
-	}, orchestrator.EngineTarget{
+	target := orchestrator.EngineTarget{
 		APIVersion: request.Target.APIVersion,
 		TargetID:   request.Target.TargetID,
 		Kind:       request.Target.Kind,
 		Endpoints:  endpoints,
 		Handles:    orchestrator.EngineHandles(cloneValues(request.Target.Handles)),
 		Metadata:   cloneValues(request.Target.Metadata),
-	})
+	}
+	preparedTarget, release, err := targetconn.Prepare(r.Context(), s.resolver, target)
 	if err != nil {
+		s.mu.Lock()
+		delete(s.instances, request.InstanceID)
+		s.mu.Unlock()
+		writeError(w, http.StatusBadGateway, "target_resolution_failed", err.Error())
+		return
+	}
+	s.mu.Lock()
+	record.release = release
+	record.redact = func(message string) string { return targetconn.RedactString(message, preparedTarget) }
+	record.redactJSON = func(value json.RawMessage) json.RawMessage { return targetconn.RedactJSON(value, preparedTarget) }
+	s.mu.Unlock()
+	instance, err := adapter.Connect(r.Context(), manifest.EngineSpec{
+		Adapter:              adapterName,
+		RequiredCapabilities: append([]string(nil), request.Engine.RequiredCapabilities...),
+		Source:               request.Engine.Source,
+		Options:              request.Engine.Options,
+	}, preparedTarget)
+	if err != nil {
+		err = targetconn.Redact(err, preparedTarget)
+		_ = release(context.Background())
 		s.mu.Lock()
 		delete(s.instances, request.InstanceID)
 		s.mu.Unlock()
@@ -204,6 +235,7 @@ func (s *Service) handleInstances(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if instance == nil {
+		_ = release(context.Background())
 		s.mu.Lock()
 		delete(s.instances, request.InstanceID)
 		s.mu.Unlock()
@@ -282,6 +314,9 @@ func (s *Service) handleInstance(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "instance_not_found", "interaction instance was not found")
 			return
 		}
+		if record.redact != nil {
+			health.Message = record.redact(health.Message)
+		}
 		updateInstanceHealth(record, health)
 		value := describeInstance(id, record)
 		s.mu.Unlock()
@@ -310,6 +345,12 @@ func (s *Service) handleInstance(w http.ResponseWriter, r *http.Request) {
 		var err error
 		if instance != nil {
 			err = instance.Disconnect(ctx)
+		}
+		if record.redact != nil && err != nil {
+			err = errors.New(record.redact(err.Error()))
+		}
+		if record.release != nil {
+			err = errors.Join(err, record.release(ctx))
 		}
 		s.mu.Lock()
 		delete(s.instances, id)
@@ -429,8 +470,14 @@ func (s *Service) handleInstanceCall(w http.ResponseWriter, r *http.Request, id 
 	defer cancel()
 	result, err := caller.Call(callCtx, request.Method, request.Params)
 	if err != nil {
+		if record.redact != nil {
+			err = errors.New(record.redact(err.Error()))
+		}
 		writeError(w, http.StatusBadGateway, "engine_call_failed", err.Error())
 		return
+	}
+	if record.redactJSON != nil {
+		result = record.redactJSON(result)
 	}
 	if !json.Valid(result) {
 		writeError(w, http.StatusBadGateway, "invalid_engine_result", "interaction engine returned invalid JSON")
@@ -454,6 +501,9 @@ func (s *Service) watchInstanceEvents(
 		if !ok || current != record {
 			s.mu.Unlock()
 			return
+		}
+		if record.redact != nil {
+			event.Message = record.redact(event.Message)
 		}
 		if record.status == "disconnecting" &&
 			(event.Status == "exited" || event.Status == "failed") {
@@ -487,18 +537,32 @@ func (s *Service) watchInstanceEvents(
 
 func (s *Service) Close(ctx context.Context) error {
 	s.mu.Lock()
-	values := make([]orchestrator.EngineInstance, 0, len(s.instances))
+	type managedInstance struct {
+		instance orchestrator.EngineInstance
+		release  func(context.Context) error
+		redact   func(string) string
+	}
+	values := make([]managedInstance, 0, len(s.instances))
 	for _, record := range s.instances {
-		if record.instance != nil {
-			values = append(values, record.instance)
-		}
+		values = append(values, managedInstance{instance: record.instance, release: record.release, redact: record.redact})
 	}
 	s.instances = make(map[string]*runningInstance)
 	s.mu.Unlock()
 	var problems []error
 	for index := len(values) - 1; index >= 0; index-- {
-		if err := values[index].Disconnect(ctx); err != nil {
-			problems = append(problems, err)
+		value := values[index]
+		if value.instance != nil {
+			if err := value.instance.Disconnect(ctx); err != nil {
+				if value.redact != nil {
+					err = errors.New(value.redact(err.Error()))
+				}
+				problems = append(problems, err)
+			}
+		}
+		if value.release != nil {
+			if err := value.release(ctx); err != nil {
+				problems = append(problems, errors.New("release target connection material"))
+			}
 		}
 	}
 	return errors.Join(problems...)

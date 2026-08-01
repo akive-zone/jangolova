@@ -10,6 +10,10 @@
 - [x] Define a provider-neutral caller-supplied target descriptor.
 - [x] Select interaction engines automatically from protocols and required
   capabilities without using target location.
+- [x] Resolve opaque credential and TLS references into expiring,
+  adapter-private connection material.
+- [x] Verify authenticated remote CDP attachment, release, TLS trust, and
+  provider-output redaction.
 
 ## Phase 2: Browser interaction engines
 
@@ -58,6 +62,7 @@
 
 ## Phase 5: Hardening
 
+- [ ] Add renewable connection leases for long-lived HTTP interactions.
 - [ ] Extend per-capability policy hooks and audit records beyond the current
   presentation execute/capture path.
 - [ ] Add orphan recovery and reconnection.

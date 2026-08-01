@@ -7,6 +7,7 @@ RUN go mod download
 COPY cmd ./cmd
 COPY adapters ./adapters
 COPY internal ./internal
+COPY targetconn ./targetconn
 RUN mkdir -p /out \
   && go build -o /out/jangolova ./cmd/jangolova \
   && go build -o /out/native-bridge-fixture ./cmd/native-bridge-fixture

@@ -24,6 +24,7 @@ import (
 	"jangolova/internal/bridge"
 	"jangolova/internal/manifest"
 	"jangolova/internal/orchestrator"
+	"jangolova/targetconn"
 )
 
 const defaultWorkerPath = "scripts/presentation-worker.mjs"
@@ -109,6 +110,9 @@ func (Adapter) Connect(ctx context.Context, spec manifest.EngineSpec, target orc
 	if err := validateEndpoint(endpoint.URL); err != nil {
 		return nil, err
 	}
+	if err := targetconn.Validate(endpoint); err != nil {
+		return nil, err
+	}
 	config, err := decodeOptions(spec.Options)
 	if err != nil {
 		return nil, err
@@ -128,6 +132,10 @@ func (Adapter) Connect(ctx context.Context, spec manifest.EngineSpec, target orc
 		return nil, err
 	}
 	command := exec.Command(nodePath, workerPath)
+	command.Env, err = targetconn.NodeEnvironment(endpoint, os.Environ())
+	if err != nil {
+		return nil, err
+	}
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("open presentation worker input: %w", err)
@@ -137,14 +145,17 @@ func (Adapter) Connect(ctx context.Context, spec manifest.EngineSpec, target orc
 		return nil, fmt.Errorf("open presentation worker output: %w", err)
 	}
 	stderr := &lockedBuffer{}
-	command.Stderr = io.MultiWriter(os.Stderr, stderr)
+	command.Stderr = stderr
 	running := &instance{command: command, stdin: stdin, responses: make(chan rpcResponse, 1), done: make(chan error, 1), events: make(chan orchestrator.EngineEvent, 16), stderr: stderr, policy: config.resolved}
 	if err := command.Start(); err != nil {
 		return nil, fmt.Errorf("start web-presentation worker: %w", err)
 	}
 	go running.readResponses(stdout)
 	go running.wait()
-	params, _ := json.Marshal(map[string]any{"endpoint": endpoint.URL, "source": strings.TrimSpace(spec.Source), "policy": config.resolved})
+	params, _ := json.Marshal(map[string]any{
+		"endpoint": endpoint.URL, "headers": targetconn.Headers(endpoint),
+		"source": strings.TrimSpace(spec.Source), "policy": config.resolved,
+	})
 	result, err := running.request(ctx, "connect", params)
 	if err != nil {
 		running.terminate()
