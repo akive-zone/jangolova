@@ -70,7 +70,13 @@ serving the presentation URL, and supplying the CDP endpoint:
   "instanceId": "presentation-one",
   "engine": {
     "adapter": "web-presentation",
-    "source": "http://127.0.0.1:8080/examples/web-presentation/"
+    "source": "http://127.0.0.1:8080/examples/web-presentation/",
+    "options": {
+      "policy": {
+        "allowedSourceOrigins": ["http://127.0.0.1:8080"],
+        "allowedAssetOrigins": ["self"]
+      }
+    }
   },
   "target": {
     "kind": "browser",
@@ -90,7 +96,9 @@ Once connected, call `act` with `presentation.create` or
 HTML/CSS/JavaScript source for a complete authored surface. Then use
 `presentation.patch`, `presentation.execute`, and `presentation.activate` for
 incremental updates. `presentation.capture` returns a PNG captured by the
-attached browser.
+attached browser. Document mutations carry `expectedRevision`; see
+[Web presentation provider handoff](presentation-provider.md) for artifact
+limits, origin policy, and conflict behavior.
 
 WebDriver Classic attaches to an existing caller-owned driver session. The
 target provider creates and later deletes that session:

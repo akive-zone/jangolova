@@ -36,7 +36,7 @@
   create/replace/patch/describe/act/capture/events).
 - [x] Add a live Chromium authored-presentation smoke test and verify
   target-preserving disconnect.
-- [ ] Define artifact size, origin, revision, and asset-loading policy.
+- [x] Define artifact size, origin, revision, and asset-loading policy.
 - [ ] Add authorization, audit, timeout, and cancellation hooks for authored
   JavaScript execution.
 - [ ] Expose Unity bridge attachment through the interaction provider.

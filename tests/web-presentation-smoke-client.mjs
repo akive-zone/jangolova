@@ -40,7 +40,20 @@ const { value: connected } = await request("/v1/instances", {
   body: {
     apiVersion: "interaction.engine/v1alpha1",
     instanceId: instanceID,
-    engine: { adapter: "web-presentation", source: sourceURL },
+    engine: {
+      adapter: "web-presentation",
+      source: sourceURL,
+      options: {
+        policy: {
+          maxHTMLBytes: 4096,
+          maxCSSBytes: 2048,
+          maxJavaScriptBytes: 2048,
+          maxTotalBytes: 8192,
+          allowedSourceOrigins: ["http://127.0.0.1:8081"],
+          allowedAssetOrigins: ["self"],
+        },
+      },
+    },
     target: {
       kind: "browser",
       endpoints: [{ name: "cdp", protocol: "cdp", url: cdpURL }],
@@ -55,23 +68,36 @@ for (const capability of ["presentation.write", "presentation.capture", "events"
 const write = await call("act", {
   name: "presentation.write",
   input: {
-    html: '<article id="authored-card"><h1>Authored live</h1><button id="advance">Advance</button></article>',
+    expectedRevision: "0",
+    html: '<article id="authored-card"><h1>Authored live</h1><button id="advance">Advance</button><img id="blocked-asset" src="http://127.0.0.1:8082/pixel.svg" alt=""></article>',
     css: "#authored-card { width: 420px; padding: 24px; background: rgb(20, 40, 80); }",
     js: "root.querySelector('#advance').addEventListener('click', () => emit('advance.clicked', { step: 2 }));",
   },
 });
 assert.equal(write.ok, true);
+assert.equal(write.revision, "1");
+
+await assert.rejects(
+  call("act", {
+    name: "presentation.write",
+    input: { expectedRevision: "0", html: "<p>stale overwrite</p>" },
+  }),
+  /revision conflict/,
+);
+
+await new Promise((resolve) => setTimeout(resolve, 200));
 
 const inspection = await call("act", {
   name: "presentation.execute",
   input: {
-    code: "return { heading: root.querySelector('h1')?.textContent, button: root.querySelector('button')?.textContent, cardCount: root.querySelectorAll('#authored-card').length };",
+    code: "return { heading: root.querySelector('h1')?.textContent, button: root.querySelector('button')?.textContent, cardCount: root.querySelectorAll('#authored-card').length, blockedAssetWidth: root.querySelector('#blocked-asset')?.naturalWidth };",
   },
 });
 assert.deepEqual(inspection.result, {
   heading: "Authored live",
   button: "Advance",
   cardCount: 1,
+  blockedAssetWidth: 0,
 });
 
 const batch = await call("events", {
@@ -94,4 +120,4 @@ assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
 const disconnected = await request(`/v1/instances/${instanceID}`, { method: "DELETE" });
 assert.equal(disconnected.status, 204);
 
-process.stdout.write("Authored presentation write, DOM, event, capture, and disconnect checks passed\n");
+process.stdout.write("Authored presentation policy, revision, DOM, event, capture, and disconnect checks passed\n");

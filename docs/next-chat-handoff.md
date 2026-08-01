@@ -42,6 +42,8 @@ resulting DOM and cursor event, validates a captured PNG, disconnects the
 provider, and proves that the caller-owned Chromium and presentation server
 remain alive. Connected capability discovery also retains the provider's
 common `describe`, `act`, and `events` methods alongside page-declared actions.
+It also verifies source and asset-origin policy, bounded inline artifacts, and
+optimistic revisions by rejecting a stale write without changing the surface.
 
 ## Important boundary
 
@@ -59,20 +61,7 @@ the caller-owned runtime.
 
 ## What is still missing
 
-### 1. Decide the presentation artifact model
-
-The current `presentation.write` accepts arbitrary source strings. Decide and
-document whether production callers will use:
-
-- inline `{html, css, js}`;
-- a versioned presentation bundle URL;
-- an artifact manifest with separate asset URLs;
-- or all three with explicit size and origin limits.
-
-Then add size limits, source origin policy, asset loading rules, and version or
-revision identifiers.
-
-### 2. Harden JavaScript execution
+### 1. Harden JavaScript execution
 
 `presentation.execute` intentionally runs code inside the target page and is
 marked externally effectful. Add provider policy hooks, audit records,
@@ -80,7 +69,7 @@ timeouts, cancellation behavior, and a clear distinction between trusted
 presentation code and untrusted agent-authored code. Avoid silently treating
 arbitrary JavaScript as a safe semantic action.
 
-### 3. Improve document semantics
+### 2. Improve document semantics
 
 The reference renderer is deliberately small. Define a stable document schema
 for layout, text, media, controls, and accessible names. Add validation and
@@ -88,7 +77,7 @@ revision-aware patching so concurrent agents cannot overwrite each other's
 changes. Add richer `describe` output containing semantic nodes and action
 schemas.
 
-### 4. Connect Three.js as a first-class presentation host
+### 3. Connect Three.js as a first-class presentation host
 
 `examples/threejs-scene` already exposes scene actions and pointer events, but
 it is not converted to the new `presentation.*` document contract. Decide
@@ -96,14 +85,14 @@ whether Three.js remains an engine-specific bridge or also implements the
 common presentation artifact lifecycle. Add an adapter/fixture if common
 operations are required.
 
-### 5. Add Unity and Unreal provider attachment
+### 4. Add Unity and Unreal provider attachment
 
 Unity has a native bridge package, but provider-level attachment is still
 unchecked in the roadmap. Define the endpoint/handle shape Xallet will pass,
 add an adapter conformance test, and implement the Unreal plugin against the
 same hello/capabilities/describe/act/events contract.
 
-### 6. Build the display-level fallback
+### 5. Build the display-level fallback
 
 The current browser adapters are semantic/runtime adapters. The planned
 provider-neutral display adapter still needs `display.describe`,
@@ -111,7 +100,7 @@ provider-neutral display adapter still needs `display.describe`,
 operations. Xallet should own the VNC/WebRTC/OS mechanism; Jangolova should
 translate approved agent intent into that contract.
 
-### 7. Harden operations and packaging
+### 6. Harden operations and packaging
 
 Remaining production work includes per-capability authorization, audit logs,
 reconnection/orphan recovery, generated protocol clients, compatibility
@@ -120,11 +109,10 @@ remain `jangolova/engine-runtime` until a release process exists.
 
 ## Recommended next build order
 
-1. Add source size/origin/revision policy and update the provider contract.
-2. Add policy/audit hooks around `presentation.execute` and capture.
-3. Normalize the document schema and semantic `describe` response.
-4. Decide and implement the Three.js common-host path.
-5. Continue with Unity/Unreal attachment, then display-level input.
+1. Add policy/audit hooks around `presentation.execute` and capture.
+2. Normalize the document schema and semantic `describe` response.
+3. Decide and implement the Three.js common-host path.
+4. Continue with Unity/Unreal attachment, then display-level input.
 
 ## Useful files
 

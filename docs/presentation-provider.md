@@ -22,7 +22,17 @@ endpoint. The provider may host the reference page in
 {
   "engine": {
     "adapter": "web-presentation",
-    "source": "http://presentation-host/session.html"
+    "source": "https://presentation.example/session.html",
+    "options": {
+      "policy": {
+        "maxHTMLBytes": 1048576,
+        "maxCSSBytes": 262144,
+        "maxJavaScriptBytes": 262144,
+        "maxTotalBytes": 1572864,
+        "allowedSourceOrigins": ["https://presentation.example"],
+        "allowedAssetOrigins": ["self", "https://assets.example"]
+      }
+    }
   },
   "target": {
     "kind": "browser",
@@ -38,6 +48,33 @@ endpoint. The provider may host the reference page in
 `source` is optional when the target provider has already opened a compatible
 page. Jangolova attaches with Puppeteer Core and never calls a browser launch
 or shutdown API.
+
+## Artifact policy
+
+The current artifact model supports inline `{html, css, js}` and structured
+presentation documents. A caller may use the independently hosted `source`
+page as a versioned bundle host, but Jangolova does not yet ingest a separate
+bundle-manifest format.
+
+Every `web-presentation` connection has an enforced policy. Defaults are:
+
+- HTML: 1 MiB;
+- CSS: 256 KiB;
+- authored or executed JavaScript: 256 KiB;
+- total inline source or structured document: 1.5 MiB;
+- source page: unrestricted unless `allowedSourceOrigins` is configured;
+- loaded assets: `self`, `data:`, and `blob:`.
+
+Limits count UTF-8 bytes. Each configured limit must be between one byte and
+32 MiB. Origins must be exact HTTP(S) origins without paths, queries,
+fragments, or credentials. When `allowedSourceOrigins` is present, the
+configured `source` must match it. `allowedAssetOrigins` accepts exact HTTP(S)
+origins plus `self`, `data:`, and `blob:`. Supplying an asset list replaces the
+default list.
+
+The worker enforces asset origins through Chromium request interception. This
+is defense in depth for the authored surface, not a replacement for Xallet's
+container or host network policy.
 
 ## Semantic operations
 
@@ -63,12 +100,22 @@ For example, an agent can write a complete surface with:
 {
   "name": "presentation.write",
   "input": {
+    "expectedRevision": "0",
     "html": "<article id=\"card\"><h1>Hello</h1><button id=\"next\">Next</button></article>",
     "css": "#card { padding: 32px; }",
     "js": "root.querySelector('#next').onclick = () => emit('next.clicked', {});"
   }
 }
 ```
+
+`presentation.create`, `presentation.replace`, `presentation.write`, and
+`presentation.patch` require `expectedRevision`. A new page begins at revision
+`"0"`; every successful mutation returns and emits the next revision.
+`presentation.describe` returns the current revision. A stale mutation fails
+with a revision conflict and leaves the current document unchanged.
+
+`presentation.create` is valid only at the empty revision. Use
+`presentation.replace` or `presentation.patch` for subsequent updates.
 
 The JavaScript runs inside the caller-owned browser page and is therefore an
 explicit externally-effectful capability. The calling agent system remains

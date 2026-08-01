@@ -7,6 +7,10 @@ test("presentation worker attaches through Puppeteer CDP and never launches a ru
   assert.match(source, /puppeteer\.connect/);
   assert.match(source, /window\.jangolova/);
   assert.match(source, /presentation\.capture/);
+  assert.match(source, /setRequestInterception/);
+  assert.match(source, /allowedAssetOrigins/);
+  assert.match(source, /withActionTimeout/);
+  assert.match(source, /Runtime\.terminateExecution/);
   assert.doesNotMatch(source, /puppeteer\.launch/);
 });
 
@@ -16,4 +20,6 @@ test("web presentation host exposes declarative create, patch, and semantic acti
     assert.match(source, new RegExp(capability.replaceAll(".", "\\.")));
   }
   assert.match(source, /window\.jangolova/);
+  assert.match(source, /expectedRevision/);
+  assert.match(source, /revision conflict/);
 });

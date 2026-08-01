@@ -1,14 +1,15 @@
 const root = document.querySelector("#presentation");
 let documentState = { type: "stack", children: [] };
+let revision = 0;
 const events = [];
 let sequence = 0;
 
 const capabilities = [
-  capability("presentation.create", "Create a declarative presentation document.", "write", ["document"]),
-  capability("presentation.replace", "Replace the complete presentation document.", "write", ["document"]),
-  capability("presentation.write", "Write HTML, CSS, and JavaScript presentation source.", "write", ["html"]),
+  capability("presentation.create", "Create a declarative presentation document.", "write", ["document", "expectedRevision"]),
+  capability("presentation.replace", "Replace the complete presentation document.", "write", ["document", "expectedRevision"]),
+  capability("presentation.write", "Write HTML, CSS, and JavaScript presentation source.", "write", ["html", "expectedRevision"]),
   capability("presentation.execute", "Execute presentation JavaScript against the mounted surface.", "external", ["code"]),
-  capability("presentation.patch", "Apply bounded JSON-style document patches.", "write", ["operations"]),
+  capability("presentation.patch", "Apply bounded JSON-style document patches.", "write", ["operations", "expectedRevision"]),
   capability("presentation.describe", "Describe the current presentation document and viewport.", "read", []),
   capability("presentation.capture", "Capture the rendered presentation through the caller-owned browser.", "read", []),
   capability("presentation.activate", "Activate a presentation button by its semantic id.", "write", ["id"]),
@@ -19,6 +20,18 @@ function capability(name, description, effect, required) {
 }
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
+function currentRevision() { return String(revision); }
+
+function requireExpectedRevision(input) {
+  if (input.expectedRevision === undefined || input.expectedRevision === null) throw new Error("expectedRevision is required");
+  const expected = String(input.expectedRevision);
+  if (expected !== currentRevision()) throw new Error(`presentation revision conflict: expected ${expected}, current ${currentRevision()}`);
+}
+
+function advanceRevision() {
+  revision += 1;
+  return currentRevision();
+}
 
 function validateDocument(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("document must be an object");
@@ -104,14 +117,15 @@ function renderNode(node) {
   return element;
 }
 
-function render() {
-  if (typeof documentState.html === "string") { mountSource(documentState); return; }
-  root.replaceChildren(renderNode(documentState));
+function render(value = documentState) {
+  if (typeof value.html === "string") { mountSource(value); return; }
+  root.replaceChildren(renderNode(value));
 }
 
 function describe() {
   return {
     engine: "jangolova-web-presentation",
+    revision: currentRevision(),
     document: clone(documentState),
     viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
   };
@@ -119,16 +133,23 @@ function describe() {
 
 function act(name, input = {}) {
   if (name === "presentation.create" || name === "presentation.replace") {
-    documentState = input.document?.html !== undefined ? clone(input.document) : validateDocument(input.document);
-    render();
-    publishEvent(name, { document: documentState });
-    return { ok: true, document: clone(documentState) };
+    requireExpectedRevision(input);
+    if (name === "presentation.create" && revision !== 0) throw new Error("presentation.create requires an empty revision");
+    const next = input.document?.html !== undefined ? clone(input.document) : validateDocument(input.document);
+    render(next);
+    documentState = next;
+    const nextRevision = advanceRevision();
+    publishEvent(name, { document: documentState, revision: nextRevision });
+    return { ok: true, document: clone(documentState), revision: nextRevision };
   }
   if (name === "presentation.write") {
-    documentState = clone({ html: input.html, css: input.css || "", js: input.js || "" });
-    mountSource(documentState);
-    publishEvent(name, { bytes: documentState.html.length });
-    return { ok: true, document: clone(documentState) };
+    requireExpectedRevision(input);
+    const next = clone({ html: input.html, css: input.css || "", js: input.js || "" });
+    mountSource(next);
+    documentState = next;
+    const nextRevision = advanceRevision();
+    publishEvent(name, { bytes: new TextEncoder().encode(documentState.html).byteLength, revision: nextRevision });
+    return { ok: true, document: clone(documentState), revision: nextRevision };
   }
   if (name === "presentation.execute") {
     const result = runCode(input.code);
@@ -136,6 +157,7 @@ function act(name, input = {}) {
     return { ok: true, result: result === undefined ? null : result };
   }
   if (name === "presentation.patch") {
+    requireExpectedRevision(input);
     if (!Array.isArray(input.operations)) throw new Error("presentation.patch operations must be an array");
     const next = clone(documentState);
     for (const operation of input.operations) {
@@ -147,10 +169,12 @@ function act(name, input = {}) {
         target.children.push(clone(operation.value));
       } else throw new Error(`unsupported presentation patch operation ${operation.op}`);
     }
-    documentState = validateDocument(next);
-    render();
-    publishEvent(name, { count: input.operations.length });
-    return { ok: true, document: clone(documentState) };
+    const validated = validateDocument(next);
+    render(validated);
+    documentState = validated;
+    const nextRevision = advanceRevision();
+    publishEvent(name, { count: input.operations.length, revision: nextRevision });
+    return { ok: true, document: clone(documentState), revision: nextRevision };
   }
   if (name === "presentation.describe") return describe();
   if (name === "presentation.activate") {

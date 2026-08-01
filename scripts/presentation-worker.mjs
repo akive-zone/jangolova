@@ -4,7 +4,9 @@ import process from "node:process";
 
 let browser;
 let page;
+let cdpSession;
 let disconnected = false;
+let activePolicy = {};
 const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 let chain = Promise.resolve();
 lines.on("line", (line) => { chain = chain.then(() => handleLine(line)).catch((error) => console.error(error?.stack || String(error))); });
@@ -20,7 +22,7 @@ async function handleLine(line) {
 }
 
 async function dispatch(method, params) {
-  if (method === "connect") return connect(params.endpoint, params.source);
+  if (method === "connect") return connect(params.endpoint, params.source, params.policy);
   if (method === "disconnect") return disconnect();
   if (method === "health") return { connected: isConnected() && Boolean(page) };
   requireConnection();
@@ -29,7 +31,15 @@ async function dispatch(method, params) {
   if (method === "describe") return page.evaluate(() => window.jangolova?.describe?.() || null);
   if (method === "act") {
     if (params.name === "presentation.capture") {
-      return { pngBase64: await page.screenshot({ encoding: "base64", fullPage: Boolean(params.input?.fullPage) }) };
+      return withActionTimeout("presentation.capture", activePolicy.captureTimeoutMillis, () => (
+        page.screenshot({ encoding: "base64", fullPage: Boolean(params.input?.fullPage) })
+          .then((pngBase64) => ({ pngBase64 }))
+      ));
+    }
+    if (params.name === "presentation.execute") {
+      return withActionTimeout("presentation.execute", activePolicy.executeTimeoutMillis, () => (
+        page.evaluate((request) => window.jangolova?.act?.(request.name, request.input || {}), params)
+      ));
     }
     return page.evaluate((request) => window.jangolova?.act?.(request.name, request.input || {}), params);
   }
@@ -37,13 +47,16 @@ async function dispatch(method, params) {
   throw new Error(`unsupported interaction method ${method}`);
 }
 
-async function connect(endpoint, source) {
+async function connect(endpoint, source, policy = {}) {
   if (typeof endpoint !== "string" || endpoint.length === 0) throw new Error("CDP endpoint is required");
+  activePolicy = policy || {};
   const { default: puppeteer } = await import("puppeteer-core");
   browser = await puppeteer.connect(endpoint.startsWith("ws") ? { browserWSEndpoint: endpoint, protocol: "cdp" } : { browserURL: endpoint, protocol: "cdp" });
   browser.on("disconnected", () => { disconnected = true; });
   const pages = await browser.pages();
   page = pages.at(-1) || await browser.newPage();
+  cdpSession = await page.target().createCDPSession();
+  await installAssetPolicy(page, policy.allowedAssetOrigins, source || page.url());
   if (typeof source === "string" && source.trim()) await page.goto(source, { waitUntil: "domcontentloaded" });
   const ready = await page.evaluate(() => Boolean(window.jangolova && typeof window.jangolova.act === "function"));
   if (!ready) throw new Error("active page does not expose window.jangolova presentation bridge");
@@ -51,7 +64,50 @@ async function connect(endpoint, source) {
   return { capabilities };
 }
 
-async function disconnect() { if (browser?.disconnect) browser.disconnect(); disconnected = true; return { disconnected: true }; }
+async function disconnect() { if (cdpSession?.detach) await cdpSession.detach().catch(() => {}); if (browser?.disconnect) browser.disconnect(); disconnected = true; return { disconnected: true }; }
+async function withActionTimeout(action, timeoutMillis, operation) {
+  const timeout = Number(timeoutMillis) > 0 ? Number(timeoutMillis) : (action === "presentation.capture" ? 10000 : 5000);
+  let timer;
+  let timedOut = false;
+  const operationPromise = Promise.resolve().then(operation);
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      if (action === "presentation.execute") terminateExecution().catch(() => {});
+      reject(new Error(`${action} timed out after ${timeout}ms`));
+    }, timeout);
+  });
+  try {
+    return await Promise.race([operationPromise, timeoutPromise]);
+  } finally {
+    clearTimeout(timer);
+    if (timedOut) operationPromise.catch(() => {});
+  }
+}
+async function terminateExecution() {
+  if (cdpSession?.send) await cdpSession.send("Runtime.terminateExecution");
+}
+async function installAssetPolicy(targetPage, configuredRules, source) {
+  const rules = Array.isArray(configuredRules) && configuredRules.length > 0 ? configuredRules : ["self", "data:", "blob:"];
+  const selfOrigin = originOf(source);
+  await targetPage.setBypassServiceWorker(true);
+  await targetPage.setCacheEnabled(false);
+  targetPage.on("request", (request) => {
+    if (isAssetAllowed(request.url(), rules, selfOrigin)) request.continue().catch(() => {});
+    else request.abort("blockedbyclient").catch(() => {});
+  });
+  await targetPage.setRequestInterception(true);
+}
+function isAssetAllowed(value, rules, selfOrigin) {
+  if (value.startsWith("about:") || value.startsWith("chrome:") || value.startsWith("devtools:")) return true;
+  if (value.startsWith("data:")) return rules.includes("data:");
+  if (value.startsWith("blob:")) return rules.includes("blob:");
+  const origin = originOf(value);
+  return (rules.includes("self") && origin && origin === selfOrigin) || rules.includes(origin);
+}
+function originOf(value) {
+  try { return new URL(value).origin; } catch { return ""; }
+}
 function isConnected() { return Boolean(browser) && !disconnected && browser.connected; }
 function requireConnection() { if (!isConnected() || !page) throw new Error("presentation target is disconnected"); }
 function respond(value) { process.stdout.write(`${JSON.stringify(value)}\n`); }

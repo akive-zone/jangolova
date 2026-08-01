@@ -13,6 +13,11 @@ const assets = new Map([
 
 const server = createServer(async (request, response) => {
   const pathname = new URL(request.url || "/", "http://127.0.0.1").pathname;
+  if (pathname === "/pixel.svg") {
+    response.writeHead(200, { "cache-control": "no-store", "content-type": "image/svg+xml" });
+    response.end('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="red"/></svg>');
+    return;
+  }
   const asset = assets.get(pathname);
   if (!asset) {
     response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });

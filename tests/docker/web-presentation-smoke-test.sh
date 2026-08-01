@@ -9,12 +9,15 @@ profile_path="/tmp/jangolova-presentation-target-profile"
 provider_log="/tmp/jangolova-presentation-provider.log"
 target_log="/tmp/jangolova-presentation-target.log"
 server_log="/tmp/jangolova-presentation-server.log"
+asset_server_log="/tmp/jangolova-presentation-asset-server.log"
 token="test-only-web-presentation-token"
 
 Xvfb "${DISPLAY}" -screen 0 1280x720x24 -ac +extension GLX +render -noreset > /tmp/jangolova-presentation-xvfb.log 2>&1 &
 xvfb_pid=$!
 PRESENTATION_TARGET_PORT=8081 node tests/web-presentation-target-server.mjs > "${server_log}" 2>&1 &
 server_pid=$!
+PRESENTATION_TARGET_PORT=8082 node tests/web-presentation-target-server.mjs > "${asset_server_log}" 2>&1 &
+asset_server_pid=$!
 chromium \
   --no-first-run \
   --no-default-browser-check \
@@ -29,15 +32,16 @@ JANGOLOVA_PROVIDER_TOKEN="${token}" bin/jangolova serve-engine-provider --bind 1
 provider_pid=$!
 
 cleanup() {
-  kill -TERM "${provider_pid}" "${target_pid}" "${server_pid}" "${xvfb_pid}" 2>/dev/null || true
+  kill -TERM "${provider_pid}" "${target_pid}" "${server_pid}" "${asset_server_pid}" "${xvfb_pid}" 2>/dev/null || true
 }
 trap cleanup EXIT
-trap 'cat "${provider_log}" >&2; cat "${target_log}" >&2; cat "${server_log}" >&2' ERR
+trap 'cat "${provider_log}" >&2; cat "${target_log}" >&2; cat "${server_log}" >&2; cat "${asset_server_log}" >&2' ERR
 
 for _ in $(seq 1 150); do
   if curl -fsS http://127.0.0.1:9224/json/version >/dev/null 2>&1 && \
      curl -fsS http://127.0.0.1:7392/healthz >/dev/null 2>&1 && \
-     curl -fsS http://127.0.0.1:8081/ >/dev/null 2>&1; then
+     curl -fsS http://127.0.0.1:8081/ >/dev/null 2>&1 && \
+     curl -fsS http://127.0.0.1:8082/ >/dev/null 2>&1; then
     break
   fi
   sleep 0.1
@@ -45,6 +49,7 @@ done
 curl -fsS http://127.0.0.1:9224/json/version >/dev/null
 curl -fsS http://127.0.0.1:7392/healthz >/dev/null
 curl -fsS http://127.0.0.1:8081/ >/dev/null
+curl -fsS http://127.0.0.1:8082/ >/dev/null
 
 JANGOLOVA_PROVIDER_TOKEN="${token}" \
   node tests/web-presentation-smoke-client.mjs

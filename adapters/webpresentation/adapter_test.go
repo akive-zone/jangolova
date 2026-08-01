@@ -1,11 +1,14 @@
 package webpresentation
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 
 	"jangolova/internal/manifest"
 	"jangolova/internal/orchestrator"
@@ -76,5 +79,160 @@ func TestConnectedCapabilitiesRetainCommonInteractionMethods(t *testing.T) {
 		if !found {
 			t.Fatalf("connected capabilities missing %q: %v", required, values)
 		}
+	}
+}
+
+func TestPresentationPolicyDefaultsAndOverrides(t *testing.T) {
+	defaults, err := decodeOptions(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaults.resolved.MaxHTMLBytes != 1024*1024 || defaults.resolved.MaxTotalBytes != 1536*1024 {
+		t.Fatalf("default policy = %#v", defaults.resolved)
+	}
+	if !defaults.resolved.actionAuthorized("presentation.execute") || !defaults.resolved.actionAuthorized("presentation.capture") {
+		t.Fatalf("default sensitive action authorization = %#v", defaults.resolved.AuthorizedActions)
+	}
+
+	configured, err := decodeOptions(json.RawMessage(`{
+		"policy": {
+			"maxHTMLBytes": 16,
+			"maxTotalBytes": 32,
+			"allowedSourceOrigins": ["https://PRESENTATION.example/"],
+			"allowedAssetOrigins": ["self", "https://ASSETS.example", "self"],
+			"authorizedActions": ["presentation.capture"],
+			"executeTimeoutMillis": 250,
+			"captureTimeoutMillis": 500
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configured.resolved.MaxHTMLBytes != 16 || configured.resolved.MaxTotalBytes != 32 {
+		t.Fatalf("configured policy = %#v", configured.resolved)
+	}
+	if got := configured.resolved.AllowedSourceOrigins; len(got) != 1 || got[0] != "https://presentation.example" {
+		t.Fatalf("source origins = %v", got)
+	}
+	if got := configured.resolved.AllowedAssetOrigins; len(got) != 2 || got[1] != "https://assets.example" {
+		t.Fatalf("asset origins = %v", got)
+	}
+	if configured.resolved.actionAuthorized("presentation.execute") || !configured.resolved.actionAuthorized("presentation.capture") {
+		t.Fatalf("authorized actions = %v", configured.resolved.AuthorizedActions)
+	}
+	if configured.resolved.ExecuteTimeoutMillis != 250 || configured.resolved.CaptureTimeoutMillis != 500 {
+		t.Fatalf("timeouts = %#v", configured.resolved)
+	}
+}
+
+func TestPresentationPolicyRejectsDisallowedSourceAndOversizedArtifact(t *testing.T) {
+	policy, err := resolvePolicy(policyConfig{
+		MaxHTMLBytes:         4,
+		MaxTotalBytes:        8,
+		AllowedSourceOrigins: []string{"https://presentation.example"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := policy.validateSource("https://other.example/presentation"); err == nil || !strings.Contains(err.Error(), "not allowed") {
+		t.Fatalf("validateSource() error = %v", err)
+	}
+	params := json.RawMessage(`{"name":"presentation.write","input":{"expectedRevision":"0","html":"12345"}}`)
+	if err := policy.validateCall("act", params); err == nil || !strings.Contains(err.Error(), "presentation HTML") {
+		t.Fatalf("validateCall() error = %v", err)
+	}
+}
+
+func TestPresentationPolicyRejectsInvalidConfiguration(t *testing.T) {
+	for _, raw := range []string{
+		`{"policy":{"maxHTMLBytes":-1}}`,
+		`{"policy":{"allowedSourceOrigins":["https://example.com/path"]}}`,
+		`{"policy":{"allowedAssetOrigins":["javascript:"]}}`,
+		`{"policy":{"authorizedActions":["presentation.delete"]}}`,
+		`{"policy":{"executeTimeoutMillis":-1}}`,
+		`{"policy":{"captureTimeoutMillis":120001}}`,
+	} {
+		if _, err := decodeOptions(json.RawMessage(raw)); err == nil {
+			t.Fatalf("decodeOptions(%s) error = nil", raw)
+		}
+	}
+}
+
+func TestSensitivePresentationActionsAreAuthorizedByPolicy(t *testing.T) {
+	policy, err := resolvePolicy(policyConfig{AuthorizedActions: []string{"presentation.capture"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := json.RawMessage(`{"name":"presentation.execute","input":{"code":"return 1"}}`)
+	if err := policy.validateCall("act", params); err == nil || !strings.Contains(err.Error(), "not authorized") {
+		t.Fatalf("validateCall() error = %v", err)
+	}
+}
+
+func TestSensitivePresentationActionsEmitAuditEvents(t *testing.T) {
+	instance := testInstance(defaultPresentationPolicy())
+	instance.responses <- rpcResponse{ID: 1, Result: json.RawMessage(`{"ok":true}`)}
+	result, err := instance.Call(context.Background(), "act", json.RawMessage(`{"name":"presentation.execute","input":{"code":"return 1"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(result) != `{"ok":true}` {
+		t.Fatalf("result = %s", result)
+	}
+	assertAuditEvent(t, instance.events, "presentation.execute.requested")
+	assertAuditEvent(t, instance.events, "presentation.execute.succeeded")
+}
+
+func TestDeniedSensitivePresentationActionEmitsAuditEvent(t *testing.T) {
+	policy := defaultPresentationPolicy()
+	policy.AuthorizedActions = []string{"presentation.capture"}
+	instance := testInstance(policy)
+	_, err := instance.Call(context.Background(), "act", json.RawMessage(`{"name":"presentation.execute","input":{"code":"return 1"}}`))
+	if err == nil {
+		t.Fatal("Call() error = nil")
+	}
+	assertAuditEvent(t, instance.events, "presentation.execute.requested")
+	assertAuditEvent(t, instance.events, "presentation.execute.denied")
+	if instance.stdin.(*testWriteCloser).Len() != 0 {
+		t.Fatal("denied action was sent to worker")
+	}
+}
+
+func TestSensitivePresentationActionTimeoutCancelsRequest(t *testing.T) {
+	policy := defaultPresentationPolicy()
+	policy.ExecuteTimeoutMillis = 1
+	instance := testInstance(policy)
+	_, err := instance.Call(context.Background(), "act", json.RawMessage(`{"name":"presentation.execute","input":{"code":"while(true){}"}}`))
+	if err == nil || !strings.Contains(err.Error(), "deadline") {
+		t.Fatalf("Call() error = %v", err)
+	}
+	assertAuditEvent(t, instance.events, "presentation.execute.requested")
+	assertAuditEvent(t, instance.events, "presentation.execute.cancelled")
+}
+
+type testWriteCloser struct{ bytes.Buffer }
+
+func (w *testWriteCloser) Close() error { return nil }
+
+func testInstance(policy presentationPolicy) *instance {
+	return &instance{
+		stdin:     &testWriteCloser{},
+		responses: make(chan rpcResponse, 1),
+		done:      make(chan error, 1),
+		events:    make(chan orchestrator.EngineEvent, 8),
+		stderr:    &lockedBuffer{},
+		policy:    policy,
+	}
+}
+
+func assertAuditEvent(t *testing.T, events <-chan orchestrator.EngineEvent, eventType string) {
+	t.Helper()
+	select {
+	case event := <-events:
+		if event.Type != eventType || !event.OccurredAt.After(time.Time{}) {
+			t.Fatalf("audit event = %#v, want %q", event, eventType)
+		}
+	default:
+		t.Fatalf("missing audit event %q", eventType)
 	}
 }

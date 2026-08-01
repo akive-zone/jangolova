@@ -31,8 +31,10 @@ const defaultWorkerPath = "scripts/presentation-worker.mjs"
 type Adapter struct{}
 
 type options struct {
-	NodePath   string `json:"nodePath,omitempty"`
-	WorkerPath string `json:"workerPath,omitempty"`
+	NodePath   string       `json:"nodePath,omitempty"`
+	WorkerPath string       `json:"workerPath,omitempty"`
+	Policy     policyConfig `json:"policy,omitempty"`
+	resolved   presentationPolicy
 }
 
 type rpcRequest struct {
@@ -54,6 +56,7 @@ type instance struct {
 	events        chan orchestrator.EngineEvent
 	stderr        *lockedBuffer
 	capabilities  []string
+	policy        presentationPolicy
 	callMu        sync.Mutex
 	nextID        atomic.Uint64
 	disconnecting atomic.Bool
@@ -110,6 +113,9 @@ func (Adapter) Connect(ctx context.Context, spec manifest.EngineSpec, target orc
 	if err != nil {
 		return nil, err
 	}
+	if err := config.resolved.validateSource(spec.Source); err != nil {
+		return nil, err
+	}
 	nodePath := strings.TrimSpace(config.NodePath)
 	if nodePath == "" {
 		nodePath, err = exec.LookPath("node")
@@ -132,13 +138,13 @@ func (Adapter) Connect(ctx context.Context, spec manifest.EngineSpec, target orc
 	}
 	stderr := &lockedBuffer{}
 	command.Stderr = io.MultiWriter(os.Stderr, stderr)
-	running := &instance{command: command, stdin: stdin, responses: make(chan rpcResponse, 1), done: make(chan error, 1), events: make(chan orchestrator.EngineEvent, 1), stderr: stderr}
+	running := &instance{command: command, stdin: stdin, responses: make(chan rpcResponse, 1), done: make(chan error, 1), events: make(chan orchestrator.EngineEvent, 16), stderr: stderr, policy: config.resolved}
 	if err := command.Start(); err != nil {
 		return nil, fmt.Errorf("start web-presentation worker: %w", err)
 	}
 	go running.readResponses(stdout)
 	go running.wait()
-	params, _ := json.Marshal(map[string]string{"endpoint": endpoint.URL, "source": strings.TrimSpace(spec.Source)})
+	params, _ := json.Marshal(map[string]any{"endpoint": endpoint.URL, "source": strings.TrimSpace(spec.Source), "policy": config.resolved})
 	result, err := running.request(ctx, "connect", params)
 	if err != nil {
 		running.terminate()
@@ -162,7 +168,35 @@ func (i *instance) Call(ctx context.Context, method string, params json.RawMessa
 	default:
 		return nil, fmt.Errorf("unsupported interaction method %q", method)
 	}
-	return i.request(ctx, method, params)
+	action := sensitiveActionName(method, params)
+	if action != "" {
+		i.audit(action, "requested", "")
+	}
+	if err := i.policy.validateCall(method, params); err != nil {
+		if action != "" {
+			i.audit(action, "denied", err.Error())
+		}
+		return nil, err
+	}
+	callCtx := ctx
+	cancel := func() {}
+	if timeout := i.policy.actionTimeout(action); timeout > 0 {
+		callCtx, cancel = context.WithTimeout(ctx, timeout+250*time.Millisecond)
+	}
+	defer cancel()
+	result, err := i.request(callCtx, method, params)
+	if action == "" {
+		return result, err
+	}
+	switch {
+	case err == nil:
+		i.audit(action, "succeeded", "")
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		i.audit(action, "cancelled", err.Error())
+	default:
+		i.audit(action, "failed", err.Error())
+	}
+	return result, err
 }
 
 func (i *instance) request(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
@@ -285,7 +319,7 @@ func (i *instance) stderrSuffix() string {
 
 func decodeOptions(raw json.RawMessage) (options, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
-		return options{}, nil
+		return options{resolved: defaultPresentationPolicy()}, nil
 	}
 	var value options
 	decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -293,6 +327,11 @@ func decodeOptions(raw json.RawMessage) (options, error) {
 	if err := decoder.Decode(&value); err != nil {
 		return options{}, fmt.Errorf("decode web-presentation options: %w", err)
 	}
+	resolved, err := resolvePolicy(value.Policy)
+	if err != nil {
+		return options{}, err
+	}
+	value.resolved = resolved
 	return value, nil
 }
 func validateEndpoint(value string) error {
@@ -347,4 +386,46 @@ func stableStrings(values []string) []string {
 	}
 	sort.Strings(result)
 	return result
+}
+
+func sensitiveActionName(method string, params json.RawMessage) string {
+	if method != bridge.MethodAct {
+		return ""
+	}
+	var call struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(params, &call); err != nil {
+		return ""
+	}
+	if call.Name == "presentation.capture" || call.Name == "presentation.execute" {
+		return call.Name
+	}
+	return ""
+}
+
+func (p presentationPolicy) actionTimeout(action string) time.Duration {
+	switch action {
+	case "presentation.execute":
+		return time.Duration(p.ExecuteTimeoutMillis) * time.Millisecond
+	case "presentation.capture":
+		return time.Duration(p.CaptureTimeoutMillis) * time.Millisecond
+	default:
+		return 0
+	}
+}
+
+func (i *instance) audit(action, outcome, message string) {
+	if action == "" {
+		return
+	}
+	event := orchestrator.EngineEvent{
+		Type:       action + "." + outcome,
+		Message:    message,
+		OccurredAt: time.Now().UTC(),
+	}
+	select {
+	case i.events <- event:
+	default:
+	}
 }
