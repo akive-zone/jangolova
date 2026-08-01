@@ -10,10 +10,10 @@ import (
 
 type inspectedAdapter struct{}
 
-func (inspectedAdapter) Start(
+func (inspectedAdapter) Connect(
 	context.Context,
 	manifest.EngineSpec,
-	orchestrator.EngineRuntime,
+	orchestrator.EngineTarget,
 ) (orchestrator.EngineInstance, error) {
 	return nil, nil
 }
@@ -21,8 +21,8 @@ func (inspectedAdapter) Start(
 func (inspectedAdapter) InspectEngine(context.Context) orchestrator.EngineInspection {
 	return orchestrator.EngineInspection{
 		Available:    false,
-		Capabilities: []string{"attach", "attach", "health"},
-		Message:      "launch binary missing",
+		Capabilities: []string{"connect", "connect", "health"},
+		Message:      "interaction dependency missing",
 	}
 }
 
@@ -35,10 +35,10 @@ func TestDiscoverEnginesUsesAdapterInspection(t *testing.T) {
 	}
 	engines := DiscoverEngines(context.Background(), registry)
 	if len(engines) != 1 || engines[0].Available ||
-		engines[0].Message != "launch binary missing" {
+		engines[0].Message != "interaction dependency missing" {
 		t.Fatalf("DiscoverEngines() = %#v", engines)
 	}
-	want := []string{"attach", "health"}
+	want := []string{"connect", "health"}
 	if len(engines[0].Capabilities) != len(want) {
 		t.Fatalf("capabilities = %#v", engines[0].Capabilities)
 	}

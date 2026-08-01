@@ -1,138 +1,86 @@
 # Architecture
 
-Jangolova is the display-engine side of the system. It starts or attaches to
-rendering engines and reports engine-local endpoints. It does not create the
-display runtime in which those engines execute.
+Jangolova owns interaction and presentation engines. Xallet, a native host, or
+another operator owns the target runtimes with which those engines interact.
 
-## Active system boundary
+## System boundary
 
 ```text
-Caller or operator
-  (shell, test harness, Xallet, or another orchestrator)
-              |
-              | engine spec + resolved runtime environment
-              v
-       Jangolova engine provider
-              |
-              v
-         engine adapter
-  (Chromium, web project, native process,
-       future Unity / Unreal adapters)
-              |
-              v
-   engine instance + typed endpoints
-              |
-              v
-Caller-owned control, display, and publication
+Agent or application
+        |
+        | semantic interaction calls
+        v
+Jangolova interaction provider
+        |
+        +-- Playwright / Puppeteer ------ CDP ------+
+        +-- Unity / Unreal bridge ------- WS -------+--> caller-owned targets
+        +-- Three.js presentation -------- web -----+
+                                                    |
+                                  Xallet or native host owns lifecycle
 ```
 
-The caller decides placement and constructs the display environment before it
-asks Jangolova to launch an engine. The caller may be a local user, a VM or
-container wrapper, a test harness, Xallet, or another compatible system.
-
-Jangolova has no dependency on Xallet. Xallet can nevertheless use exactly the
-same engine-provider contract as standalone callers.
+Endpoint and handle flow is inward: the operator creates a target and gives
+Jangolova its connection coordinates. Jangolova never returns a newly created
+Chromium endpoint because it does not create Chromium.
 
 ## Ownership
 
 Jangolova owns:
 
-- display-engine discovery and lifecycle;
-- engine-specific launch and attach behavior;
-- engine-local profiles and child processes when requested;
-- cooperative web and native engine bridges;
-- typed endpoint discovery, such as CDP or a semantic bridge;
-- cleanup of resources created inside an engine adapter.
+- Playwright, Puppeteer, and future browser-interaction libraries;
+- Three.js presentation logic and cooperative web experiences;
+- Unity and Unreal interaction plugins and bridge protocol;
+- semantic capability discovery, description, actions, observations, events,
+  and interaction-session health;
+- worker processes used internally by an interaction adapter.
 
-The operator owns:
+The target provider owns:
 
-- physical, virtual-machine, and OCI placement;
-- X11, Wayland, native desktop, framebuffer, and other display runtimes;
-- container networks, mounts, devices, secrets, and port publication;
-- VNC, WebRTC, capture, input routing, access policy, and session state;
-- translation of private engine endpoints into client-reachable endpoints.
+- Chromium, WebKit, Gecko, SpiderMonkey, Unity, Unreal, and other executable
+  runtime processes;
+- physical machines, VMs, OCI workloads, and their lifecycle;
+- displays, windows, surfaces, profiles, devices, networks, ports, and secrets;
+- VNC, WebRTC, CDP exposure, capture, access policy, and session state.
 
-When Xallet is the operator, all operator responsibilities above belong to
-Xallet. A standalone user can provide the same inputs directly.
+When Xallet is present, it is the target provider. In standalone use, a native
+user or another system supplies the same target contract.
 
-## Engine launch contract
+## Connection contract
 
-An engine adapter receives:
+An interaction adapter receives an adapter name, optional interaction-specific
+options, and a caller-owned target containing:
 
-1. an adapter name;
-2. an engine source, such as a URL, project directory, or executable;
-3. engine-specific options;
-4. caller-resolved environment values;
-5. caller-owned opaque handles.
+- a target kind such as `browser`;
+- typed endpoints such as `cdp` or `websocket`;
+- optional opaque native handles.
 
-The environment is ordinary launch input. For example, `DISPLAY=:99` tells an
-engine where an existing X11 server is; it does not authorize the adapter to
-create or destroy that server. Named opaque handles travel beside environment
-values for adapters that understand native windows, views, layers, devices, or
-other runtime objects. A handle remains owned by its caller.
+Connecting creates only a Jangolova interaction session. Disconnecting releases
+the adapter and its Playwright/Puppeteer worker without stopping the target.
 
-An engine instance supports stop and may report typed endpoints, active health,
-and lifecycle events. Adapter discovery reports actual availability and
-engine-local capabilities. Endpoint metadata describes the engine-side address
-and target port. It does not imply that Jangolova publishes that address outside
-its current network namespace.
+## Semantic protocol
 
-## Execution modes
+Every callable interaction engine uses the common bridge methods:
 
-The engine code is identical in every mode:
+- `hello`
+- `capabilities`
+- `describe`
+- `act`
+- `events`
 
-- **Native host:** inherit the host environment and native display.
-- **External display:** receive `DISPLAY`, `WAYLAND_DISPLAY`, or equivalent
-  values from a caller.
-- **Independent container:** receive environment, mounts, devices, and network
-  configuration from any OCI operator.
-- **Xallet-managed:** receive placement-resolved values from Xallet and return
-  private engine endpoints for Xallet to expose or control.
-
-See [Deployment modes](deployment-modes.md) for runnable examples.
-
-## Provider protocol
-
-The authenticated `jangolova.engine/v1alpha1` HTTP provider is the primary
-process boundary. It exposes engine inventory and launch/get/stop operations.
-It may run on loopback as a standalone daemon or on a private application
-network managed by Xallet or another operator.
-
-The direct `launch-engine` command uses the same adapter contract without an
-HTTP daemon. This keeps native development and portability tests independent
-of an orchestrator.
+The authenticated `jangolova.interaction/v1alpha1` HTTP API transports those
+calls. The cooperative Unity bridge implements the same vocabulary.
 
 ## Package direction
 
 ```text
-cmd/jangolova/          direct CLI and engine-provider daemon
-internal/engineprovider/ versioned provider protocol and service
-internal/orchestrator/  engine lifecycle and caller-supplied runtime contract
-internal/bridge/        engine-cooperative semantic protocol
-adapters/               concrete display-engine adapters
-integrations/           engine-side web and native integrations
-deploy/engine-runtime/  optional engine artifact, not runtime topology
-tests/docker/           reproducible test fixture only
+cmd/jangolova/              CLI and authenticated provider
+internal/engineprovider/    target-in / semantic-call protocol
+internal/orchestrator/      interaction lifecycle and target contracts
+internal/bridge/            engine-neutral semantic methods
+adapters/browserautomation/ Playwright and Puppeteer attachment
+integrations/               Three.js, Unity, and future Unreal integrations
+deploy/engine-runtime/      optional interaction artifact
+tests/docker/               target-owning portability fixture only
 ```
 
-Concrete adapters depend on the core engine contract. The provider depends on
-the registry, but neither the contract nor adapters import Xallet.
-
-## Removed compatibility layer
-
-The original combined `Session` manifest, surface lifecycle, controllers,
-connectors, JSONL runner, and agent runtime are no longer part of Jangolova.
-Existing display-session behavior belongs in Xallet or another caller. The
-repository boundary test prevents those product responsibilities from being
-reintroduced outside test fixtures.
-
-## Security boundaries
-
-- Provider and engine-control endpoints bind to loopback unless an operator
-  explicitly places them on a protected private network.
-- Provider lifecycle operations require bearer authentication.
-- Jangolova returns private endpoint metadata; the operator controls external
-  publication and authorization.
-- Secrets and persistent credentials remain external launch inputs rather than
-  source-controlled engine specifications.
-- Cooperative engine capabilities are descriptive data, not authorization.
+No package imports Xallet. No product adapter provisions a target runtime.

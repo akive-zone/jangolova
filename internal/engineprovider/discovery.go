@@ -21,12 +21,9 @@ func DiscoverEngines(
 		inspection := orchestrator.EngineInspection{
 			Available: true,
 			Capabilities: []string{
-				"launch",
-				"stop",
-				"events",
-				"health",
-				"runtime.environment",
-				"runtime.handles",
+				"connect",
+				"disconnect",
+				"target.handles",
 			},
 		}
 		if inspector, ok := adapter.(orchestrator.EngineInspector); ok {

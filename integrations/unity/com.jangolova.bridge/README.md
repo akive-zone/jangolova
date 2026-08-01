@@ -1,6 +1,6 @@
 # Jangolova Bridge for Unity
 
-This package lets a Unity player launched by Jangolova connect outward to the
+This package lets a caller-owned Unity player connect outward to Jangolova's
 authenticated loopback WebSocket bridge. It implements
 `jangolova.bridge/v1alpha1` and exposes a small, agent-operable scene surface.
 
@@ -19,8 +19,9 @@ project dependency, add:
 ```
 
 Add `JangolovaSceneBridge` to one GameObject, or import the **Basic Dynamic
-Scene** sample. A normal editor or player run without bridge environment values
-does nothing. A player launched by Jangolova connects automatically.
+Scene** sample. A normal editor or player run without bridge connection values
+does nothing. Xallet or the native launcher injects values supplied for the
+Jangolova interaction session when it starts the player.
 
 ## Capabilities
 

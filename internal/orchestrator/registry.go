@@ -14,7 +14,7 @@ func NewRegistry() *Registry {
 	return &Registry{engines: make(map[string]EngineAdapter)}
 }
 
-// Engine returns one registered display-engine adapter.
+// Engine returns one registered interaction-engine adapter.
 func (r *Registry) Engine(name string) (EngineAdapter, bool) {
 	if r == nil {
 		return nil, false

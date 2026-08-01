@@ -1,89 +1,81 @@
 # Jangolova
 
-Jangolova is a deployment-neutral display-engine toolkit. It discovers,
-launches, attaches to, observes the health of, and stops browser and native
-engines such as Chromium, Unity, Unreal, and generic executables.
+Jangolova is a deployment-neutral interaction and presentation engine toolkit.
+It uses Playwright, Puppeteer, Three.js, Unity, Unreal, and cooperative bridge
+integrations to observe, operate, and present through caller-owned targets.
 
-Jangolova consumes runtime inputs supplied by its caller. It does not own
-Xvfb, VNC, WebRTC, CDP clients, container placement, networking, volumes, port
-publication, or display-session policy. Xallet owns those concerns when the
-products are used together.
+Jangolova does not provision Chromium, native applications, displays,
+containers, VMs, networking, or credentials. Xallet owns those concerns when
+the products run together; a native user or another operator can provide the
+same target endpoints and handles without Xallet.
 
-Jangolova runs directly on a physical machine or VM, inside an independently
-configured container, or as a Xallet-managed workload. Xallet integration is a
-supported deployment mode, not a runtime requirement.
+## Included interaction engines
 
-## Included engines and integrations
-
-- Chromium launch/attach with private CDP endpoint discovery.
-- Local web-project serving through Chromium.
-- Generic native-process lifecycle with caller-supplied environment and opaque
-  handles.
-- Engine-side cooperative bridge protocol and conformance checks.
-- Unity Package Manager bridge package and Three.js example experience.
-- Cursor-addressed engine readiness, health, exit, and failure events.
+- Playwright attachment to a caller-owned Chromium-compatible CDP target.
+- Puppeteer attachment to the same target contract.
+- Agent-facing `hello`, `capabilities`, `describe`, `act`, and `events` calls.
+- Three.js dynamic presentation example.
+- Authenticated cooperative bridge and Unity Package Manager integration.
+- Target-preserving disconnect, active health, and lifecycle events.
 
 ## Commands
 
-List engine adapters:
+Discover installed interaction engines:
 
 ```bash
-go run ./cmd/jangolova engines
-go run ./cmd/jangolova engines --json
+jangolova engines
+jangolova engines --json
 ```
 
-Launch Chromium directly on the native host:
+Attach directly to a browser already started by the native host or Xallet:
 
 ```bash
-go run ./cmd/jangolova launch-engine \
-  --adapter chromium \
-  --source https://example.com
+jangolova connect-engine \
+  --adapter playwright \
+  --target-kind browser \
+  --endpoint cdp=http://127.0.0.1:9222
 ```
 
-Launch an engine against caller-owned runtime inputs:
-
-```bash
-go run ./cmd/jangolova launch-engine \
-  --adapter native-process \
-  --source ./my-engine \
-  --env DISPLAY=:99 \
-  --handle native.window=caller-owned-window-1234
-```
+`connect-engine` disconnects Jangolova when interrupted; it does not terminate
+the browser.
 
 Run the authenticated provider:
 
 ```bash
 export JANGOLOVA_PROVIDER_TOKEN="replace-with-a-random-secret"
-go run ./cmd/jangolova serve-engine-provider --bind 127.0.0.1:7391
+jangolova serve-engine-provider --bind 127.0.0.1:7391
 ```
+
+The provider accepts caller-owned targets, creates interaction instances, and
+exposes their semantic calls at `POST /v1/instances/{id}/call`.
 
 ## Ownership boundary
 
-The supported Jangolova API contains engines and engine-side integrations only.
-The original combined session, surface, controller, connector, agent runtime,
-and deployment scripts have been removed. Test fixtures may construct a
-temporary external display to verify portability, but they are isolated under
-`tests/` and are not product configuration.
+```text
+Agent -> Jangolova interaction engine -> caller-owned target
+             Playwright                    Chromium
+             Puppeteer                     native application
+             Three.js                      display/runtime
+             Unity/Unreal bridge
+```
 
-See:
+The repository boundary test prevents Chromium launch, native-process launch,
+surfaces, VNC, sessions, container placement, and other target-runtime concerns
+from returning to Jangolova product code. Test fixtures may create temporary
+targets solely to verify attachment portability.
 
-- [Architecture](docs/architecture.md)
-- [Vision](docs/vision.md)
-- [Engine provider](docs/engine-provider.md)
-- [Deployment modes](docs/deployment-modes.md)
-- [Experience bridge protocol](docs/bridge-protocol.md)
-- [Dynamic presentation integrations](docs/dynamic-presentation.md)
-- [Native engines](docs/native-engines.md)
-- [Xallet boundary](docs/xallet-boundary.md)
-- [Roadmap](docs/roadmap.md)
+See [Architecture](docs/architecture.md), [Interaction provider](docs/engine-provider.md),
+[Deployment modes](docs/deployment-modes.md), [Bridge protocol](docs/bridge-protocol.md),
+and [Xallet boundary](docs/xallet-boundary.md).
 
 ## Tests
 
 ```bash
 go test ./...
+npm run test:browser-worker
 npm run test:unity-package
 ```
 
-The optional Linux portability fixture is documented in
+The optional container fixture is documented in
 [tests/docker/README.md](tests/docker/README.md). Docker is not required by
 Jangolova itself.

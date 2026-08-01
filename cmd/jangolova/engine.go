@@ -23,7 +23,7 @@ import (
 func enginesCommand(args []string) error {
 	flags := flag.NewFlagSet("engines", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	jsonOutput := flags.Bool("json", false, "write the engine inventory as JSON")
+	jsonOutput := flags.Bool("json", false, "write the interaction-engine inventory as JSON")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -46,39 +46,37 @@ func enginesCommand(args []string) error {
 		if !engine.Available {
 			availability = "unavailable"
 		}
-		fmt.Fprintf(
-			os.Stdout,
-			"%s\t%s\t%s\n",
-			engine.Adapter,
-			availability,
-			strings.Join(engine.Capabilities, ","),
-		)
+		fmt.Fprintf(os.Stdout, "%s\t%s\t%s\n", engine.Adapter, availability, strings.Join(engine.Capabilities, ","))
 	}
 	return nil
 }
 
-func launchEngineCommand(args []string) error {
-	flags := flag.NewFlagSet("launch-engine", flag.ContinueOnError)
+func connectEngineCommand(args []string) error {
+	flags := flag.NewFlagSet("connect-engine", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	adapterName := flags.String("adapter", "", "engine adapter name")
-	source := flags.String("source", "", "engine source, URL, project, or executable")
+	adapterName := flags.String("adapter", "", "interaction-engine adapter name")
+	targetKind := flags.String("target-kind", "", "caller-owned target kind")
+	source := flags.String("source", "", "optional resource to present after connecting")
 	optionsText := flags.String("options", "{}", "engine-specific options as a JSON object")
-	stopTimeout := flags.Duration("stop-timeout", 15*time.Second, "maximum graceful stop duration")
-	var environment environmentFlags
-	flags.Var(&environment, "env", "environment override in KEY=VALUE form; may be repeated")
+	disconnectTimeout := flags.Duration("disconnect-timeout", 15*time.Second, "maximum disconnect duration")
+	var endpoints endpointFlags
+	flags.Var(&endpoints, "endpoint", "caller-owned target endpoint in PROTOCOL=URL form; may be repeated")
 	var handles handleFlags
-	flags.Var(&handles, "handle", "opaque runtime handle in NAME=VALUE form; may be repeated")
+	flags.Var(&handles, "handle", "opaque caller-owned target handle in NAME=VALUE form; may be repeated")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("launch-engine accepts flags only")
+		return errors.New("connect-engine accepts flags only")
 	}
 	if strings.TrimSpace(*adapterName) == "" {
 		return errors.New("--adapter is required")
 	}
-	if *stopTimeout <= 0 {
-		return errors.New("--stop-timeout must be positive")
+	if strings.TrimSpace(*targetKind) == "" {
+		return errors.New("--target-kind is required")
+	}
+	if *disconnectTimeout <= 0 {
+		return errors.New("--disconnect-timeout must be positive")
 	}
 	options, err := decodeEngineOptions(*optionsText)
 	if err != nil {
@@ -90,33 +88,30 @@ func launchEngineCommand(args []string) error {
 	}
 	adapter, ok := registry.Engine(strings.TrimSpace(*adapterName))
 	if !ok {
-		return fmt.Errorf("engine adapter %q is not registered", *adapterName)
+		return fmt.Errorf("interaction engine %q is not registered", *adapterName)
 	}
 
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	instance, err := adapter.Start(ctx, manifest.EngineSpec{
+	instance, err := adapter.Connect(ctx, manifest.EngineSpec{
 		Adapter: strings.TrimSpace(*adapterName),
 		Source:  strings.TrimSpace(*source),
 		Options: options,
-	}, orchestrator.EngineRuntime{
-		Environment: orchestrator.EngineEnvironment(environment.clone()),
-		Handles:     orchestrator.EngineHandles(handles.clone()),
+	}, orchestrator.EngineTarget{
+		Kind:      strings.TrimSpace(*targetKind),
+		Endpoints: endpoints.clone(),
+		Handles:   orchestrator.EngineHandles(handles.clone()),
 	})
 	if err != nil {
-		return fmt.Errorf("launch engine: %w", err)
+		return fmt.Errorf("connect interaction engine: %w", err)
 	}
 	if instance == nil {
-		return errors.New("launch engine: engine adapter returned no instance")
+		return errors.New("connect interaction engine: adapter returned no instance")
 	}
 
 	health := orchestrator.EngineHealth{
 		Status:     orchestrator.EngineHealthUnknown,
-		Message:    "engine adapter does not implement an active health probe",
+		Message:    "interaction engine does not implement an active health probe",
 		ObservedAt: time.Now().UTC(),
 	}
 	if provider, ok := instance.(orchestrator.EngineHealthProvider); ok {
@@ -128,26 +123,22 @@ func launchEngineCommand(args []string) error {
 		APIVersion: engineprovider.APIVersion,
 		InstanceID: "standalone",
 		Adapter:    strings.TrimSpace(*adapterName),
-		Status:     "running",
+		Status:     "connected",
 		Health: engineprovider.Health{
-			Status:     health.Status,
-			Message:    health.Message,
-			ObservedAt: health.ObservedAt,
+			Status: health.Status, Message: health.Message, ObservedAt: health.ObservedAt,
 		},
-		Endpoints: []engineprovider.Endpoint{},
 	}
-	if endpoints, ok := instance.(engineprovider.EndpointProvider); ok {
-		result.Endpoints = endpoints.EngineEndpoints()
+	if provider, ok := instance.(orchestrator.EngineCapabilityProvider); ok {
+		result.Capabilities = provider.EngineCapabilities()
 	}
 	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
-		_ = instance.Stop(context.Background())
+		_ = instance.Disconnect(context.Background())
 		return err
 	}
 
 	var terminal *orchestrator.EngineEvent
 	if source, ok := instance.(orchestrator.EngineEventSource); ok {
-		events := source.EngineEvents()
-		for events != nil && terminal == nil {
+		for events := source.EngineEvents(); events != nil && terminal == nil; {
 			select {
 			case <-ctx.Done():
 				events = nil
@@ -157,10 +148,10 @@ func launchEngineCommand(args []string) error {
 					continue
 				}
 				if err := json.NewEncoder(os.Stdout).Encode(engineEventValue(event)); err != nil {
-					_ = instance.Stop(context.Background())
+					_ = instance.Disconnect(context.Background())
 					return err
 				}
-				if event.Status == "exited" || event.Status == "failed" {
+				if event.Status == "disconnected" || event.Status == "failed" {
 					terminal = &event
 				}
 			}
@@ -169,24 +160,19 @@ func launchEngineCommand(args []string) error {
 	if terminal == nil && ctx.Err() == nil {
 		<-ctx.Done()
 	}
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), *stopTimeout)
+	disconnectCtx, cancel := context.WithTimeout(context.Background(), *disconnectTimeout)
 	defer cancel()
-	if err := instance.Stop(shutdownCtx); err != nil {
+	if err := instance.Disconnect(disconnectCtx); err != nil && terminal == nil {
 		return err
 	}
 	if terminal != nil && terminal.Status == "failed" {
-		return fmt.Errorf("engine failed: %s", terminal.Message)
+		return fmt.Errorf("interaction engine failed: %s", terminal.Message)
 	}
 	return nil
 }
 
 func engineEventValue(event orchestrator.EngineEvent) engineprovider.InstanceEvent {
-	return engineprovider.InstanceEvent{
-		Type:       event.Type,
-		Status:     event.Status,
-		Message:    event.Message,
-		OccurredAt: event.OccurredAt,
-	}
+	return engineprovider.InstanceEvent{Type: event.Type, Status: event.Status, Message: event.Message, OccurredAt: event.OccurredAt}
 }
 
 func decodeEngineOptions(value string) (json.RawMessage, error) {
@@ -198,48 +184,33 @@ func decodeEngineOptions(value string) (json.RawMessage, error) {
 	return raw, nil
 }
 
-type environmentFlags map[string]string
+var handleFlagNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._-]{0,127}$`)
 
-func (e *environmentFlags) String() string {
-	if e == nil || len(*e) == 0 {
-		return ""
-	}
-	values := make([]string, 0, len(*e))
-	for name, value := range *e {
-		values = append(values, name+"="+value)
-	}
-	return strings.Join(values, ",")
-}
+type endpointFlags []orchestrator.TargetEndpoint
 
-func (e *environmentFlags) Set(value string) error {
-	name, item, ok := strings.Cut(value, "=")
-	if !ok || strings.TrimSpace(name) == "" || strings.ContainsAny(name, "=\x00") {
-		return errors.New("--env must use KEY=VALUE with a valid key")
+func (e *endpointFlags) String() string { return fmt.Sprint([]orchestrator.TargetEndpoint(*e)) }
+
+func (e *endpointFlags) Set(value string) error {
+	protocol, endpointURL, ok := strings.Cut(value, "=")
+	if !ok || !handleFlagNamePattern.MatchString(protocol) || strings.TrimSpace(endpointURL) == "" {
+		return errors.New("--endpoint must use PROTOCOL=URL")
 	}
-	if strings.ContainsRune(item, '\x00') {
-		return fmt.Errorf("--env %s contains a null byte", name)
-	}
-	if *e == nil {
-		*e = environmentFlags{}
-	}
-	(*e)[name] = item
+	*e = append(*e, orchestrator.TargetEndpoint{Name: protocol, Protocol: protocol, URL: endpointURL})
 	return nil
 }
 
-func (e environmentFlags) clone() map[string]string {
-	values := make(map[string]string, len(e))
-	for name, value := range e {
-		values[name] = value
-	}
-	return values
+func (e endpointFlags) clone() []orchestrator.TargetEndpoint {
+	return append([]orchestrator.TargetEndpoint(nil), e...)
 }
-
-var handleFlagNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._-]{0,127}$`)
 
 type handleFlags map[string]string
 
 func (h *handleFlags) String() string {
-	return (*environmentFlags)(h).String()
+	values := make([]string, 0, len(*h))
+	for name, value := range *h {
+		values = append(values, name+"="+value)
+	}
+	return strings.Join(values, ",")
 }
 
 func (h *handleFlags) Set(value string) error {
@@ -258,5 +229,9 @@ func (h *handleFlags) Set(value string) error {
 }
 
 func (h handleFlags) clone() map[string]string {
-	return environmentFlags(h).clone()
+	values := make(map[string]string, len(h))
+	for name, value := range h {
+		values[name] = value
+	}
+	return values
 }

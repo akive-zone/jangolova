@@ -23,7 +23,7 @@ func serveEngineProviderCommand(args []string) error {
 	bind := flags.String(
 		"bind",
 		envOrDefault("JANGOLOVA_PROVIDER_BIND", "127.0.0.1:7391"),
-		"engine-provider HTTP bind address",
+		"interaction-provider HTTP bind address",
 	)
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -65,10 +65,10 @@ func serveEngineProviderCommand(args []string) error {
 		_ = provider.Close(shutdownCtx)
 		_ = server.Shutdown(shutdownCtx)
 	}()
-	fmt.Fprintf(os.Stderr, "jangolova engine provider listening on %s\n", *bind)
+	fmt.Fprintf(os.Stderr, "jangolova interaction provider listening on %s\n", *bind)
 	err = server.ListenAndServe()
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("serve engine provider: %w", err)
+		return fmt.Errorf("serve interaction provider: %w", err)
 	}
 	return nil
 }

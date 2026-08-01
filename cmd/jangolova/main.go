@@ -15,8 +15,8 @@ func main() {
 	switch os.Args[1] {
 	case "engines":
 		err = enginesCommand(os.Args[2:])
-	case "launch-engine":
-		err = launchEngineCommand(os.Args[2:])
+	case "connect-engine":
+		err = connectEngineCommand(os.Args[2:])
 	case "serve-engine-provider":
 		err = serveEngineProviderCommand(os.Args[2:])
 	case "help", "-h", "--help":
@@ -37,7 +37,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `Usage: jangolova <command>
 
 Commands:
-  engines                 Discover display-engine adapters and availability
-  launch-engine           Launch one engine in the supplied runtime
-  serve-engine-provider   Serve the authenticated engine-provider API`)
+  engines                 Discover interaction-engine adapters and availability
+  connect-engine          Attach one engine to a caller-owned target
+  serve-engine-provider   Serve the authenticated interaction-engine API`)
 }

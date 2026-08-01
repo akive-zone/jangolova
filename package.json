@@ -1,5 +1,5 @@
 {
-  "name": "jangolova-engine-examples",
+  "name": "jangolova-interaction-engines",
   "version": "0.2.0",
   "private": true,
   "type": "module",
@@ -7,9 +7,12 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "test:browser-worker": "node --test tests/browser-worker-contract-test.mjs",
     "test:unity-package": "node tests/unity-package-contract-test.mjs"
   },
   "dependencies": {
+    "playwright-core": "1.51.1",
+    "puppeteer-core": "25.4.0",
     "three": "^0.185.1"
   }
 }

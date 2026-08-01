@@ -1,8 +1,8 @@
-# Container Engine Test Harness
+# Container Interaction Test Harness
 
 This directory is a reproducible Linux portability fixture. It is not a
 Jangolova deployment topology. The fixture may create Xvfb because tests need
-to prove that an engine can consume a caller-owned external display.
+to prove that Playwright and Puppeteer can attach to a caller-owned browser.
 
 Build the fixture:
 
@@ -10,18 +10,10 @@ Build the fixture:
 docker compose -f tests/docker/compose.yaml build engine-test
 ```
 
-Run headed Chromium against test-owned Xvfb:
+Run both browser interaction engines against test-owned Chromium and Xvfb:
 
 ```bash
 docker compose -f tests/docker/compose.yaml run --rm engine-test
-```
-
-Run the native-process lifecycle test:
-
-```bash
-docker compose -f tests/docker/compose.yaml run --rm \
-  --entrypoint tests/docker/native-process-smoke-test.sh \
-  engine-test
 ```
 
 Run the Unity package contract test:
@@ -32,5 +24,7 @@ docker compose -f tests/docker/compose.yaml run --rm \
   engine-test
 ```
 
-No VNC, controller, session, public-port, profile-volume, or production
-placement configuration belongs to this harness.
+The test launches Chromium directly, gives its CDP endpoint to Jangolova, and
+verifies that disconnecting Jangolova leaves Chromium running. No VNC,
+session, public-port, profile-volume, or production placement configuration
+belongs to this harness.

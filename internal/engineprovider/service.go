@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"jangolova/internal/bridge"
 	"jangolova/internal/manifest"
 	"jangolova/internal/orchestrator"
 )
@@ -91,7 +92,7 @@ func (s *Service) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":         true,
-		"service":    "jangolova-engine-provider",
+		"service":    "jangolova-interaction-provider",
 		"apiVersion": APIVersion,
 	})
 }
@@ -120,63 +121,70 @@ func (s *Service) handleInstances(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 		return
 	}
-	var request LaunchRequest
+	var request ConnectRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024*1024))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "invalid launch request")
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid connection request")
 		return
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "invalid_request", "launch request must contain one JSON value")
+		writeError(w, http.StatusBadRequest, "invalid_request", "connection request must contain one JSON value")
 		return
 	}
-	if err := validateLaunchRequest(request); err != nil {
+	if err := validateConnectRequest(request); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_request", err.Error())
 		return
 	}
 	adapter, ok := s.registry.Engine(request.Engine.Adapter)
 	if !ok {
-		writeError(w, http.StatusNotFound, "engine_not_found", "engine adapter is not registered")
+		writeError(w, http.StatusNotFound, "engine_not_found", "interaction engine is not registered")
 		return
 	}
 
 	s.mu.Lock()
 	if _, exists := s.instances[request.InstanceID]; exists {
 		s.mu.Unlock()
-		writeError(w, http.StatusConflict, "instance_exists", "engine instance already exists")
+		writeError(w, http.StatusConflict, "instance_exists", "interaction instance already exists")
 		return
 	}
 	record := &runningInstance{
 		adapter: request.Engine.Adapter,
-		status:  "starting",
+		status:  "connecting",
 		health: Health{
 			Status:     orchestrator.EngineHealthStarting,
 			ObservedAt: time.Now().UTC(),
 		},
 	}
 	appendInstanceEvent(record, orchestrator.EngineEvent{
-		Type:       "instance.starting",
-		Status:     "starting",
+		Type:       "instance.connecting",
+		Status:     "connecting",
 		OccurredAt: time.Now().UTC(),
 	})
 	s.instances[request.InstanceID] = record
 	s.mu.Unlock()
 
-	instance, err := adapter.Start(r.Context(), manifest.EngineSpec{
+	endpoints := make([]orchestrator.TargetEndpoint, 0, len(request.Target.Endpoints))
+	for _, endpoint := range request.Target.Endpoints {
+		endpoints = append(endpoints, orchestrator.TargetEndpoint{
+			Name: endpoint.Name, Protocol: endpoint.Protocol, URL: endpoint.URL,
+		})
+	}
+	instance, err := adapter.Connect(r.Context(), manifest.EngineSpec{
 		Adapter: request.Engine.Adapter,
 		Source:  request.Engine.Source,
 		Options: request.Engine.Options,
-	}, orchestrator.EngineRuntime{
-		Environment: orchestrator.EngineEnvironment(cloneValues(request.Environment)),
-		Handles:     orchestrator.EngineHandles(cloneValues(request.Handles)),
+	}, orchestrator.EngineTarget{
+		Kind:      request.Target.Kind,
+		Endpoints: endpoints,
+		Handles:   orchestrator.EngineHandles(cloneValues(request.Target.Handles)),
 	})
 	if err != nil {
 		s.mu.Lock()
 		delete(s.instances, request.InstanceID)
 		s.mu.Unlock()
-		writeError(w, http.StatusBadGateway, "engine_start_failed", err.Error())
+		writeError(w, http.StatusBadGateway, "engine_connect_failed", err.Error())
 		return
 	}
 	if instance == nil {
@@ -186,21 +194,21 @@ func (s *Service) handleInstances(w http.ResponseWriter, r *http.Request) {
 		writeError(
 			w,
 			http.StatusBadGateway,
-			"engine_start_failed",
-			"engine adapter returned no instance",
+			"engine_connect_failed",
+			"interaction engine returned no instance",
 		)
 		return
 	}
 	s.mu.Lock()
 	record.instance = instance
-	record.status = "running"
+	record.status = "connected"
 	record.health = Health{
 		Status:     orchestrator.EngineHealthHealthy,
 		ObservedAt: time.Now().UTC(),
 	}
 	appendInstanceEvent(record, orchestrator.EngineEvent{
-		Type:       "instance.ready",
-		Status:     "running",
+		Type:       "instance.connected",
+		Status:     "connected",
 		OccurredAt: time.Now().UTC(),
 	})
 	value := describeInstance(request.InstanceID, record)
@@ -225,6 +233,10 @@ func (s *Service) handleInstance(w http.ResponseWriter, r *http.Request) {
 		s.handleInstanceEvents(w, r, id)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "call" {
+		s.handleInstanceCall(w, r, id)
+		return
+	}
 	if len(parts) != 1 {
 		http.NotFound(w, r)
 		return
@@ -233,12 +245,12 @@ func (s *Service) handleInstance(w http.ResponseWriter, r *http.Request) {
 	record, ok := s.instances[id]
 	if !ok {
 		s.mu.Unlock()
-		writeError(w, http.StatusNotFound, "instance_not_found", "engine instance was not found")
+		writeError(w, http.StatusNotFound, "instance_not_found", "interaction instance was not found")
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
-		if record.status != "running" {
+		if record.status != "connected" {
 			value := describeInstance(id, record)
 			s.mu.Unlock()
 			writeJSON(w, http.StatusOK, value)
@@ -251,7 +263,7 @@ func (s *Service) handleInstance(w http.ResponseWriter, r *http.Request) {
 		current, exists := s.instances[id]
 		if !exists || current != record {
 			s.mu.Unlock()
-			writeError(w, http.StatusNotFound, "instance_not_found", "engine instance was not found")
+			writeError(w, http.StatusNotFound, "instance_not_found", "interaction instance was not found")
 			return
 		}
 		updateInstanceHealth(record, health)
@@ -259,20 +271,20 @@ func (s *Service) handleInstance(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		writeJSON(w, http.StatusOK, value)
 	case http.MethodDelete:
-		if record.status == "stopping" {
+		if record.status == "disconnecting" {
 			s.mu.Unlock()
-			writeError(w, http.StatusConflict, "instance_stopping", "engine instance is stopping")
+			writeError(w, http.StatusConflict, "instance_disconnecting", "interaction instance is disconnecting")
 			return
 		}
-		record.status = "stopping"
+		record.status = "disconnecting"
 		record.health = Health{
 			Status:     orchestrator.EngineHealthStopping,
-			Message:    "engine is stopping",
+			Message:    "interaction engine is disconnecting",
 			ObservedAt: time.Now().UTC(),
 		}
 		appendInstanceEvent(record, orchestrator.EngineEvent{
-			Type:       "instance.stopping",
-			Status:     "stopping",
+			Type:       "instance.disconnecting",
+			Status:     "disconnecting",
 			OccurredAt: time.Now().UTC(),
 		})
 		instance := record.instance
@@ -281,13 +293,13 @@ func (s *Service) handleInstance(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		var err error
 		if instance != nil {
-			err = instance.Stop(ctx)
+			err = instance.Disconnect(ctx)
 		}
 		s.mu.Lock()
 		delete(s.instances, id)
 		s.mu.Unlock()
 		if err != nil {
-			writeError(w, http.StatusBadGateway, "engine_stop_failed", err.Error())
+			writeError(w, http.StatusBadGateway, "engine_disconnect_failed", err.Error())
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -317,7 +329,7 @@ func (s *Service) handleInstanceEvents(w http.ResponseWriter, r *http.Request, i
 	record, ok := s.instances[id]
 	if !ok {
 		s.mu.Unlock()
-		writeError(w, http.StatusNotFound, "instance_not_found", "engine instance was not found")
+		writeError(w, http.StatusNotFound, "instance_not_found", "interaction instance was not found")
 		return
 	}
 	if after > record.nextEvent {
@@ -355,6 +367,66 @@ func (s *Service) handleInstanceEvents(w http.ResponseWriter, r *http.Request, i
 	})
 }
 
+func (s *Service) handleInstanceCall(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+	var request CallRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024*1024))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid call request")
+		return
+	}
+	if strings.TrimSpace(request.Method) == "" {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_request", "method is required")
+		return
+	}
+	if len(request.Params) == 0 {
+		request.Params = json.RawMessage(`{}`)
+	}
+	if !json.Valid(request.Params) {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_request", "params must be valid JSON")
+		return
+	}
+
+	s.mu.Lock()
+	record, ok := s.instances[id]
+	if !ok {
+		s.mu.Unlock()
+		writeError(w, http.StatusNotFound, "instance_not_found", "interaction instance was not found")
+		return
+	}
+	if record.status != "connected" {
+		s.mu.Unlock()
+		writeError(w, http.StatusConflict, "instance_not_connected", "interaction instance is not connected")
+		return
+	}
+	caller, ok := record.instance.(bridge.Caller)
+	s.mu.Unlock()
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "calls_unsupported", "interaction engine does not accept bridge calls")
+		return
+	}
+	callCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	result, err := caller.Call(callCtx, request.Method, request.Params)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "engine_call_failed", err.Error())
+		return
+	}
+	if !json.Valid(result) {
+		writeError(w, http.StatusBadGateway, "invalid_engine_result", "interaction engine returned invalid JSON")
+		return
+	}
+	writeJSON(w, http.StatusOK, CallResponse{
+		APIVersion: APIVersion,
+		InstanceID: id,
+		Result:     result,
+	})
+}
+
 func (s *Service) watchInstanceEvents(
 	id string,
 	record *runningInstance,
@@ -367,10 +439,10 @@ func (s *Service) watchInstanceEvents(
 			s.mu.Unlock()
 			return
 		}
-		if record.status == "stopping" &&
+		if record.status == "disconnecting" &&
 			(event.Status == "exited" || event.Status == "failed") {
-			event.Type = "instance.stopped"
-			event.Status = "stopped"
+			event.Type = "instance.disconnected"
+			event.Status = "disconnected"
 			event.Message = ""
 			record.status = "stopped"
 			record.health = Health{
@@ -409,14 +481,14 @@ func (s *Service) Close(ctx context.Context) error {
 	s.mu.Unlock()
 	var problems []error
 	for index := len(values) - 1; index >= 0; index-- {
-		if err := values[index].Stop(ctx); err != nil {
+		if err := values[index].Disconnect(ctx); err != nil {
 			problems = append(problems, err)
 		}
 	}
 	return errors.Join(problems...)
 }
 
-func validateLaunchRequest(request LaunchRequest) error {
+func validateConnectRequest(request ConnectRequest) error {
 	if request.APIVersion != APIVersion {
 		return fmt.Errorf("apiVersion must be %q", APIVersion)
 	}
@@ -426,21 +498,27 @@ func validateLaunchRequest(request LaunchRequest) error {
 	if strings.TrimSpace(request.Engine.Adapter) == "" {
 		return errors.New("engine.adapter is required")
 	}
+	if strings.TrimSpace(request.Target.Kind) == "" {
+		return errors.New("target.kind is required")
+	}
 	if len(request.Engine.Options) != 0 {
 		var object map[string]any
 		if err := json.Unmarshal(request.Engine.Options, &object); err != nil || object == nil {
 			return errors.New("engine.options must be a JSON object")
 		}
 	}
-	for name, value := range request.Environment {
-		if name == "" || strings.ContainsAny(name, "=\x00") {
-			return fmt.Errorf("invalid environment variable name %q", name)
+	for index, endpoint := range request.Target.Endpoints {
+		if !handleNamePattern.MatchString(endpoint.Name) {
+			return fmt.Errorf("invalid target endpoint name %q", endpoint.Name)
 		}
-		if strings.ContainsRune(value, '\x00') {
-			return fmt.Errorf("environment variable %q contains a null byte", name)
+		if strings.TrimSpace(endpoint.Protocol) == "" {
+			return fmt.Errorf("target endpoint %d protocol is required", index)
+		}
+		if strings.TrimSpace(endpoint.URL) == "" || strings.ContainsRune(endpoint.URL, '\x00') {
+			return fmt.Errorf("target endpoint %q URL is required", endpoint.Name)
 		}
 	}
-	for name, value := range request.Handles {
+	for name, value := range request.Target.Handles {
 		if !handleNamePattern.MatchString(name) {
 			return fmt.Errorf("invalid handle name %q", name)
 		}
@@ -455,17 +533,17 @@ func validateLaunchRequest(request LaunchRequest) error {
 }
 
 func describeInstance(id string, record *runningInstance) Instance {
-	endpoints := []Endpoint{}
-	if provider, ok := record.instance.(EndpointProvider); ok {
-		endpoints = append(endpoints, provider.EngineEndpoints()...)
+	capabilities := []string{}
+	if provider, ok := record.instance.(orchestrator.EngineCapabilityProvider); ok {
+		capabilities = stableCapabilities(provider.EngineCapabilities())
 	}
 	return Instance{
-		APIVersion: APIVersion,
-		InstanceID: id,
-		Adapter:    record.adapter,
-		Status:     record.status,
-		Health:     record.health,
-		Endpoints:  endpoints,
+		APIVersion:   APIVersion,
+		InstanceID:   id,
+		Adapter:      record.adapter,
+		Status:       record.status,
+		Health:       record.health,
+		Capabilities: capabilities,
 	}
 }
 
@@ -477,7 +555,7 @@ func probeInstanceHealth(
 	if !ok {
 		return orchestrator.EngineHealth{
 			Status:     orchestrator.EngineHealthUnknown,
-			Message:    "engine adapter does not implement an active health probe",
+			Message:    "interaction engine does not implement an active health probe",
 			ObservedAt: time.Now().UTC(),
 		}
 	}

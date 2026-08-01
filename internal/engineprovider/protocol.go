@@ -1,5 +1,5 @@
 // Package engineprovider implements Jangolova's deployment-neutral
-// display-engine provider contract. Xallet is one supported client.
+// interaction-engine provider. Xallet is one supported target provider.
 package engineprovider
 
 import (
@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const APIVersion = "jangolova.engine/v1alpha1"
+const APIVersion = "jangolova.interaction/v1alpha1"
 
 type EngineDescriptor struct {
 	Adapter      string   `json:"adapter"`
@@ -22,35 +22,49 @@ type EngineSpec struct {
 	Options json.RawMessage `json:"options,omitempty"`
 }
 
-type LaunchRequest struct {
-	APIVersion  string            `json:"apiVersion"`
-	InstanceID  string            `json:"instanceId"`
-	Engine      EngineSpec        `json:"engine"`
-	Environment map[string]string `json:"environment,omitempty"`
-	Handles     map[string]string `json:"handles,omitempty"`
+type TargetEndpoint struct {
+	Name     string `json:"name"`
+	Protocol string `json:"protocol"`
+	URL      string `json:"url"`
 }
 
-type Endpoint struct {
-	Name       string `json:"name"`
-	Protocol   string `json:"protocol"`
-	URL        string `json:"url,omitempty"`
-	TargetPort int    `json:"targetPort,omitempty"`
-	Visibility string `json:"visibility"`
+type Target struct {
+	Kind      string            `json:"kind"`
+	Endpoints []TargetEndpoint  `json:"endpoints,omitempty"`
+	Handles   map[string]string `json:"handles,omitempty"`
+}
+
+type ConnectRequest struct {
+	APIVersion string     `json:"apiVersion"`
+	InstanceID string     `json:"instanceId"`
+	Engine     EngineSpec `json:"engine"`
+	Target     Target     `json:"target"`
 }
 
 type Instance struct {
-	APIVersion string     `json:"apiVersion"`
-	InstanceID string     `json:"instanceId"`
-	Adapter    string     `json:"adapter"`
-	Status     string     `json:"status"`
-	Health     Health     `json:"health"`
-	Endpoints  []Endpoint `json:"endpoints"`
+	APIVersion   string   `json:"apiVersion"`
+	InstanceID   string   `json:"instanceId"`
+	Adapter      string   `json:"adapter"`
+	Status       string   `json:"status"`
+	Health       Health   `json:"health"`
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 type Health struct {
 	Status     string    `json:"status"`
 	Message    string    `json:"message,omitempty"`
 	ObservedAt time.Time `json:"observedAt"`
+}
+
+type CallRequest struct {
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params,omitempty"`
+}
+
+type CallResponse struct {
+	APIVersion string          `json:"apiVersion"`
+	InstanceID string          `json:"instanceId"`
+	Result     json.RawMessage `json:"result"`
 }
 
 type InstanceEvent struct {
@@ -71,10 +85,4 @@ type InstanceEventBatch struct {
 type ErrorResponse struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
-}
-
-// EndpointProvider is implemented by engine instances that expose typed
-// control endpoints to their caller.
-type EndpointProvider interface {
-	EngineEndpoints() []Endpoint
 }

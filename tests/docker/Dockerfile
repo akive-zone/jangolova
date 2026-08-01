@@ -30,8 +30,9 @@ COPY tests ./tests
 COPY examples ./examples
 COPY integrations ./integrations
 COPY internal/bridge ./internal/bridge
+COPY scripts ./scripts
 COPY --from=builder /out/jangolova /app/bin/jangolova
 COPY --from=builder /out/native-bridge-fixture /app/bin/native-bridge-fixture
-RUN chmod +x tests/docker/*.sh examples/native-process/fixture.sh
+RUN chmod +x tests/docker/*.sh scripts/browser-worker.mjs
 
 ENTRYPOINT ["tests/docker/entrypoint.sh"]

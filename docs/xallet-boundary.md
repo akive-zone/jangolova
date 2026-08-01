@@ -1,20 +1,20 @@
 # Xallet Boundary
 
-Jangolova owns display engines. Xallet owns the display runtime.
+Jangolova owns interaction and presentation engines. Xallet owns target
+runtimes and display infrastructure.
 
-The authoritative migration and ownership plan lives in Xallet at
-`docs/plans/jangolova-display-runtime-transfer.md`.
+Jangolova retains Playwright, Puppeteer, Three.js, Unity and Unreal plugins,
+their semantic interaction protocol, and adapter-local workers. Xallet owns
+Chromium/WebKit/Gecko processes, native applications, surfaces, VNC, CDP
+exposure, OCI placement, networking, secrets, policy, and session lifecycle.
 
-Jangolova retains Chromium, WebKit, Gecko, SpiderMonkey, Unity, Unreal, native
-process, and web-project engine lifecycle. CDP, VNC, surfaces, input,
-observation, capture, policy, display sessions, and external-agent interfaces
-move to Xallet.
+The integration is target-in:
 
-The integration is a versioned engine-provider protocol: Xallet supplies a
-surface environment or caller-owned opaque handle with an engine launch
-request, and Jangolova returns an engine instance plus typed control endpoints
-and cursor-addressed lifecycle events.
+1. Xallet creates and starts a target.
+2. Xallet resolves a private endpoint or native handle.
+3. Xallet asks Jangolova to connect an interaction engine to that target.
+4. Agents call Jangolova's capabilities through the authenticated provider.
+5. Disconnecting Jangolova does not terminate the Xallet-owned target.
 
-Xallet now implements native-host, managed host-X11, and managed OCI-X11
-surfaces. The OCI surface is run by Xallet's Docker, Podman, or Apple Container
-control plane; Jangolova receives only its resolved `DISPLAY` environment.
+The same sequence works without Xallet when a native system supplies the
+target coordinates directly.

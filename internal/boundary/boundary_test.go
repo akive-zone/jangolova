@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// TestRepositoryOwnsEngineCodeOnly prevents the removed display-runtime and
-// combined-session responsibilities from returning to Jangolova product code.
+// TestRepositoryOwnsInteractionCodeOnly prevents target-runtime provisioning
+// and combined-session responsibilities from returning to Jangolova.
 func TestRepositoryOwnsEngineCodeOnly(t *testing.T) {
 	t.Parallel()
 
@@ -88,6 +88,11 @@ var forbiddenSourceFragments = []string{
 	"RegisterController(",
 	"RegisterConnector(",
 	"NewSession(",
+	"RegisterEngine(\"chromium\"",
+	"RegisterEngine(\"native-process\"",
+	"--remote-debugging-port=",
+	"LaunchPersistentContext(",
+	"puppeteer.launch(",
 }
 
 func forbiddenPathComponent(name string) bool {

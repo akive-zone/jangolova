@@ -22,25 +22,22 @@ func TestDecodeEngineOptions(t *testing.T) {
 	}
 }
 
-func TestEnvironmentFlags(t *testing.T) {
+func TestEndpointFlags(t *testing.T) {
 	t.Parallel()
 
-	var values environmentFlags
-	if err := values.Set("DISPLAY=:99"); err != nil {
+	var values endpointFlags
+	if err := values.Set("cdp=http://127.0.0.1:9222"); err != nil {
 		t.Fatal(err)
 	}
-	if err := values.Set("WAYLAND_DISPLAY=wayland-0"); err != nil {
-		t.Fatal(err)
+	if len(values) != 1 || values[0].Protocol != "cdp" || values[0].URL != "http://127.0.0.1:9222" {
+		t.Fatalf("endpoints = %#v", values)
 	}
-	if values["DISPLAY"] != ":99" || values["WAYLAND_DISPLAY"] != "wayland-0" {
-		t.Fatalf("environment = %#v", values)
-	}
-	for _, invalid := range []string{"DISPLAY", "=value", "BAD\x00KEY=value"} {
+	for _, invalid := range []string{"cdp", "=value", "bad/path=http://localhost"} {
 		if err := values.Set(invalid); err == nil {
-			t.Fatalf("environment %q was accepted", invalid)
+			t.Fatalf("endpoint %q was accepted", invalid)
 		}
 	}
-	if got := values.String(); !strings.Contains(got, "DISPLAY=:99") {
+	if got := values.String(); !strings.Contains(got, "cdp") {
 		t.Fatalf("String() = %q", got)
 	}
 }

@@ -7,28 +7,45 @@ import (
 	"jangolova/internal/manifest"
 )
 
+// EngineInstance is a Jangolova-owned interaction session attached to a
+// caller-owned target. Disconnect must release only Jangolova resources; it
+// must never terminate the target runtime.
 type EngineInstance interface {
-	Stop(context.Context) error
+	Disconnect(context.Context) error
 }
 
-// EngineEnvironment contains placement-resolved values supplied by the caller.
-type EngineEnvironment map[string]string
+// TargetEndpoint identifies a caller-owned service that an interaction engine
+// can attach to, such as a Chromium CDP endpoint or a Unity bridge endpoint.
+type TargetEndpoint struct {
+	Name     string
+	Protocol string
+	URL      string
+}
 
-// EngineHandles contains named opaque runtime values supplied and owned by the
-// caller. An adapter may interpret a handle it understands, but must not assume
-// ownership of the resource identified by that value.
+// EngineHandles contains opaque target handles supplied and owned by the
+// caller. An adapter may interpret a handle it understands, but never owns the
+// underlying resource.
 type EngineHandles map[string]string
 
-// EngineRuntime contains the caller-resolved inputs for one engine launch.
-// Jangolova consumes these inputs without creating the display or placement
-// resources that produced them.
-type EngineRuntime struct {
-	Environment EngineEnvironment
-	Handles     EngineHandles
+// EngineTarget is the complete caller-resolved target description. Xallet or
+// the native host creates and manages the target runtime before this value is
+// passed to Jangolova.
+type EngineTarget struct {
+	Kind      string
+	Endpoints []TargetEndpoint
+	Handles   EngineHandles
 }
 
-// EngineEvent reports an engine lifecycle or health transition. Status, when
-// present, becomes the provider-visible instance status.
+func (t EngineTarget) Endpoint(protocol string) (TargetEndpoint, bool) {
+	for _, endpoint := range t.Endpoints {
+		if endpoint.Protocol == protocol {
+			return endpoint, true
+		}
+	}
+	return TargetEndpoint{}, false
+}
+
+// EngineEvent reports an interaction-session lifecycle or health transition.
 type EngineEvent struct {
 	Type       string
 	Status     string
@@ -36,9 +53,6 @@ type EngineEvent struct {
 	OccurredAt time.Time
 }
 
-// EngineEventSource is optionally implemented by instances that can report
-// readiness, health, or unexpected termination after Start returns. The
-// channel must close when the instance stops producing events.
 type EngineEventSource interface {
 	EngineEvents() <-chan EngineEvent
 }
@@ -50,18 +64,20 @@ type EngineHealth struct {
 }
 
 const (
-	EngineHealthStarting  = "starting"
-	EngineHealthStopping  = "stopping"
-	EngineHealthHealthy   = "healthy"
+	EngineHealthStarting  = "connecting"
+	EngineHealthStopping  = "disconnecting"
+	EngineHealthHealthy   = "connected"
 	EngineHealthUnhealthy = "unhealthy"
-	EngineHealthStopped   = "stopped"
+	EngineHealthStopped   = "disconnected"
 	EngineHealthUnknown   = "unknown"
 )
 
-// EngineHealthProvider is optionally implemented by instances that can probe
-// their current engine-local health without assuming display ownership.
 type EngineHealthProvider interface {
 	EngineHealth(context.Context) EngineHealth
+}
+
+type EngineCapabilityProvider interface {
+	EngineCapabilities() []string
 }
 
 type EngineInspection struct {
@@ -70,11 +86,13 @@ type EngineInspection struct {
 	Message      string
 }
 
-// EngineInspector reports adapter availability and engine-local capabilities.
+// EngineInspector reports interaction-adapter availability and capabilities.
 type EngineInspector interface {
 	InspectEngine(context.Context) EngineInspection
 }
 
+// EngineAdapter connects a Jangolova interaction engine to a caller-owned
+// target. It does not launch, stop, or otherwise provision that target.
 type EngineAdapter interface {
-	Start(context.Context, manifest.EngineSpec, EngineRuntime) (EngineInstance, error)
+	Connect(context.Context, manifest.EngineSpec, EngineTarget) (EngineInstance, error)
 }

@@ -1,7 +1,7 @@
 # Experience Bridge Protocol
 
 The Jangolova experience bridge lets a cooperative interactive runtime expose
-semantic capabilities without coupling the engine lifecycle to Three.js,
+semantic capabilities without coupling target lifecycle to Three.js,
 Unity, Unreal, or a particular caller transport.
 
 The current protocol identifier is:
@@ -74,8 +74,8 @@ to their advertised features.
 ## Transport mappings
 
 The browser transport exposes the five operations on `window.jangolova`.
-Jangolova launches the browser and reports its CDP endpoint; the caller decides
-how to invoke the page bridge.
+Jangolova attaches Playwright or Puppeteer to a caller-owned CDP endpoint and
+invokes the page bridge without owning the browser lifecycle.
 
 The native transport uses an authenticated loopback WebSocket. Jangolova sends:
 
@@ -95,11 +95,10 @@ or a structured error:
 {"id":1,"error":{"code":"invalid_action","message":"Object was not found"}}
 ```
 
-The native process receives the endpoint, bearer token, and protocol identifier
-through Jangolova-owned environment values and connects outward. Transport
-framing, authentication, discovery, and process ownership belong to the engine
-integration; capability, description, action, and event semantics belong to
-this protocol.
+The target owner starts the native process and injects the endpoint, bearer
+token, and protocol identifier supplied for the Jangolova interaction session.
+Transport framing and semantic calls belong to Jangolova; target process and
+display ownership remain external.
 
 ## Unity
 

@@ -15,85 +15,60 @@ import (
 )
 
 type fakeEngineAdapter struct {
-	environment map[string]string
-	handles     map[string]string
-	instance    *fakeEngineInstance
+	target   orchestrator.EngineTarget
+	instance *fakeEngineInstance
 }
 
-func (f *fakeEngineAdapter) Start(
+func (f *fakeEngineAdapter) Connect(
 	_ context.Context,
 	_ manifest.EngineSpec,
-	launch orchestrator.EngineRuntime,
+	target orchestrator.EngineTarget,
 ) (orchestrator.EngineInstance, error) {
-	f.environment = launch.Environment
-	f.handles = launch.Handles
+	f.target = target
 	f.instance = &fakeEngineInstance{events: make(chan orchestrator.EngineEvent, 4)}
 	return f.instance, nil
 }
 
 type fakeEngineInstance struct {
-	stopped bool
-	events  chan orchestrator.EngineEvent
-	once    sync.Once
+	disconnected bool
+	events       chan orchestrator.EngineEvent
+	once         sync.Once
 }
 
-type nilEngineAdapter struct{}
-
-type healthEngineAdapter struct{}
-
-type healthEngineInstance struct{}
-
-func (nilEngineAdapter) Start(
-	context.Context,
-	manifest.EngineSpec,
-	orchestrator.EngineRuntime,
-) (orchestrator.EngineInstance, error) {
-	return nil, nil
-}
-
-func (healthEngineAdapter) Start(
-	context.Context,
-	manifest.EngineSpec,
-	orchestrator.EngineRuntime,
-) (orchestrator.EngineInstance, error) {
-	return healthEngineInstance{}, nil
-}
-
-func (healthEngineInstance) Stop(context.Context) error { return nil }
-
-func (healthEngineInstance) EngineHealth(context.Context) orchestrator.EngineHealth {
-	return orchestrator.EngineHealth{
-		Status:     orchestrator.EngineHealthUnhealthy,
-		Message:    "fixture probe failed",
-		ObservedAt: time.Now().UTC(),
-	}
-}
-
-func (f *fakeEngineInstance) Stop(context.Context) error {
-	f.stopped = true
+func (f *fakeEngineInstance) Disconnect(context.Context) error {
+	f.disconnected = true
 	f.once.Do(func() { close(f.events) })
 	return nil
 }
 
-func (f *fakeEngineInstance) EngineEvents() <-chan orchestrator.EngineEvent {
-	return f.events
+func (f *fakeEngineInstance) EngineEvents() <-chan orchestrator.EngineEvent { return f.events }
+func (f *fakeEngineInstance) EngineCapabilities() []string                  { return []string{"describe", "act"} }
+func (f *fakeEngineInstance) Call(_ context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	return json.Marshal(map[string]any{"method": method, "params": params})
 }
 
-func (f *fakeEngineInstance) EngineEndpoints() []Endpoint {
-	return []Endpoint{{
-		Name:       "cdp",
-		Protocol:   "cdp",
-		URL:        "http://127.0.0.1:9222",
-		Visibility: "private",
-	}}
+type nilEngineAdapter struct{}
+
+func (nilEngineAdapter) Connect(context.Context, manifest.EngineSpec, orchestrator.EngineTarget) (orchestrator.EngineInstance, error) {
+	return nil, nil
 }
 
-func TestServiceLaunchesAndStopsEngine(t *testing.T) {
+type healthEngineAdapter struct{}
+type healthEngineInstance struct{}
+
+func (healthEngineAdapter) Connect(context.Context, manifest.EngineSpec, orchestrator.EngineTarget) (orchestrator.EngineInstance, error) {
+	return healthEngineInstance{}, nil
+}
+func (healthEngineInstance) Disconnect(context.Context) error { return nil }
+func (healthEngineInstance) EngineHealth(context.Context) orchestrator.EngineHealth {
+	return orchestrator.EngineHealth{Status: orchestrator.EngineHealthUnhealthy, Message: "fixture probe failed", ObservedAt: time.Now().UTC()}
+}
+
+func TestServiceConnectsCallsAndDisconnectsEngine(t *testing.T) {
 	t.Parallel()
-
 	registry := orchestrator.NewRegistry()
 	adapter := &fakeEngineAdapter{}
-	if err := registry.RegisterEngine("chromium", adapter); err != nil {
+	if err := registry.RegisterEngine("playwright", adapter); err != nil {
 		t.Fatal(err)
 	}
 	service, err := NewService(registry, "test-token")
@@ -103,112 +78,72 @@ func TestServiceLaunchesAndStopsEngine(t *testing.T) {
 	handler := service.Routes()
 
 	body := `{
-		"apiVersion":"jangolova.engine/v1alpha1",
+		"apiVersion":"jangolova.interaction/v1alpha1",
 		"instanceId":"browser-one",
-		"engine":{"adapter":"chromium","source":"about:blank"},
-		"environment":{"DISPLAY":":99"},
-		"handles":{"native.window":"window-1234"}
+		"engine":{"adapter":"playwright"},
+		"target":{"kind":"browser","endpoints":[{"name":"cdp","protocol":"cdp","url":"http://127.0.0.1:9222"}],"handles":{"native.window":"window-1234"}}
 	}`
-	request := httptest.NewRequest(
-		http.MethodPost,
-		"/v1/instances",
-		strings.NewReader(body),
-	)
-	request.Header.Set("Authorization", "Bearer test-token")
-	request.Header.Set("Content-Type", "application/json")
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
+	response := performRequest(handler, http.MethodPost, "/v1/instances", body)
 	if response.Code != http.StatusCreated {
-		t.Fatalf("launch status = %d", response.Code)
+		t.Fatalf("connect status = %d: %s", response.Code, response.Body.String())
 	}
 	var instance Instance
 	if err := json.NewDecoder(response.Body).Decode(&instance); err != nil {
 		t.Fatal(err)
 	}
-	if instance.InstanceID != "browser-one" ||
-		len(instance.Endpoints) != 1 ||
-		instance.Endpoints[0].Protocol != "cdp" {
+	if instance.InstanceID != "browser-one" || instance.Status != "connected" || len(instance.Capabilities) != 2 {
 		t.Fatalf("instance = %#v", instance)
 	}
-	if instance.Health.Status != orchestrator.EngineHealthHealthy {
-		t.Fatalf("instance health = %#v", instance.Health)
+	if len(adapter.target.Endpoints) != 1 || adapter.target.Endpoints[0].URL != "http://127.0.0.1:9222" {
+		t.Fatalf("target = %#v", adapter.target)
 	}
-	if adapter.environment["DISPLAY"] != ":99" {
-		t.Fatalf("environment = %#v", adapter.environment)
-	}
-	if adapter.handles["native.window"] != "window-1234" {
-		t.Fatalf("handles = %#v", adapter.handles)
+	if adapter.target.Handles["native.window"] != "window-1234" {
+		t.Fatalf("handles = %#v", adapter.target.Handles)
 	}
 
-	adapter.instance.events <- orchestrator.EngineEvent{
-		Type:       "engine.failed",
-		Status:     "failed",
-		Message:    "fixture exited",
-		OccurredAt: time.Now().UTC(),
+	response = performRequest(handler, http.MethodPost, "/v1/instances/browser-one/call", `{"method":"describe","params":{}}`)
+	if response.Code != http.StatusOK {
+		t.Fatalf("call status = %d: %s", response.Code, response.Body.String())
 	}
+	var call CallResponse
+	if err := json.NewDecoder(response.Body).Decode(&call); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(call.Result), `"method":"describe"`) {
+		t.Fatalf("call = %#v", call)
+	}
+
+	adapter.instance.events <- orchestrator.EngineEvent{Type: "interaction.failed", Status: "failed", Message: "fixture exited", OccurredAt: time.Now().UTC()}
 	deadline := time.Now().Add(time.Second)
 	for {
-		request = httptest.NewRequest(
-			http.MethodGet,
-			"/v1/instances/browser-one/events?after=2",
-			nil,
-		)
-		request.Header.Set("Authorization", "Bearer test-token")
-		response = httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
+		response = performRequest(handler, http.MethodGet, "/v1/instances/browser-one/events?after=2", "")
 		var batch InstanceEventBatch
-		decodeErr := json.NewDecoder(response.Body).Decode(&batch)
-		if decodeErr != nil {
-			t.Fatal(decodeErr)
+		if err := json.NewDecoder(response.Body).Decode(&batch); err != nil {
+			t.Fatal(err)
 		}
 		if len(batch.Events) == 1 {
-			if batch.Events[0].Type != "engine.failed" || batch.Cursor != "3" {
-				t.Fatalf("event batch = %#v", batch)
+			if batch.Events[0].Type != "interaction.failed" || batch.Cursor != "3" {
+				t.Fatalf("events = %#v", batch)
 			}
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("terminal event was not observed: %#v", batch)
+			t.Fatalf("terminal event not observed: %#v", batch)
 		}
 		time.Sleep(time.Millisecond)
 	}
-	request = httptest.NewRequest(
-		http.MethodGet,
-		"/v1/instances/browser-one",
-		nil,
-	)
-	request.Header.Set("Authorization", "Bearer test-token")
-	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	if err := json.NewDecoder(response.Body).Decode(&instance); err != nil {
-		t.Fatal(err)
-	}
-	if instance.Status != "failed" {
-		t.Fatalf("instance status = %q, want failed", instance.Status)
-	}
-	if instance.Health.Status != orchestrator.EngineHealthUnhealthy {
-		t.Fatalf("instance health = %#v", instance.Health)
-	}
 
-	request = httptest.NewRequest(
-		http.MethodDelete,
-		"/v1/instances/browser-one",
-		nil,
-	)
-	request.Header.Set("Authorization", "Bearer test-token")
-	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
+	response = performRequest(handler, http.MethodDelete, "/v1/instances/browser-one", "")
 	if response.Code != http.StatusNoContent {
-		t.Fatalf("stop status = %d", response.Code)
+		t.Fatalf("disconnect status = %d", response.Code)
 	}
-	if !adapter.instance.stopped {
-		t.Fatal("engine was not stopped")
+	if !adapter.instance.disconnected {
+		t.Fatal("interaction engine was not disconnected")
 	}
 }
 
 func TestServiceRequiresAuthorization(t *testing.T) {
 	t.Parallel()
-
 	service, err := NewService(orchestrator.NewRegistry(), "test-token")
 	if err != nil {
 		t.Fatal(err)
@@ -223,7 +158,6 @@ func TestServiceRequiresAuthorization(t *testing.T) {
 
 func TestServiceRejectsEmptyEngineInstance(t *testing.T) {
 	t.Parallel()
-
 	registry := orchestrator.NewRegistry()
 	if err := registry.RegisterEngine("empty", nilEngineAdapter{}); err != nil {
 		t.Fatal(err)
@@ -232,26 +166,17 @@ func TestServiceRejectsEmptyEngineInstance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(
-		http.MethodPost,
-		"/v1/instances",
-		strings.NewReader(`{
-			"apiVersion":"jangolova.engine/v1alpha1",
-			"instanceId":"empty-one",
-			"engine":{"adapter":"empty"}
-		}`),
-	)
-	request.Header.Set("Authorization", "Bearer test-token")
-	response := httptest.NewRecorder()
-	service.Routes().ServeHTTP(response, request)
+	response := performRequest(service.Routes(), http.MethodPost, "/v1/instances", `{
+		"apiVersion":"jangolova.interaction/v1alpha1","instanceId":"empty-one",
+		"engine":{"adapter":"empty"},"target":{"kind":"browser"}
+	}`)
 	if response.Code != http.StatusBadGateway {
-		t.Fatalf("launch status = %d, want %d", response.Code, http.StatusBadGateway)
+		t.Fatalf("connect status = %d, want 502", response.Code)
 	}
 }
 
 func TestServiceActivelyProbesInstanceHealth(t *testing.T) {
 	t.Parallel()
-
 	registry := orchestrator.NewRegistry()
 	if err := registry.RegisterEngine("health-fixture", healthEngineAdapter{}); err != nil {
 		t.Fatal(err)
@@ -260,79 +185,39 @@ func TestServiceActivelyProbesInstanceHealth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	launch := httptest.NewRequest(
-		http.MethodPost,
-		"/v1/instances",
-		strings.NewReader(`{
-			"apiVersion":"jangolova.engine/v1alpha1",
-			"instanceId":"health-one",
-			"engine":{"adapter":"health-fixture"}
-		}`),
-	)
-	launch.Header.Set("Authorization", "Bearer test-token")
-	launchResponse := httptest.NewRecorder()
-	service.Routes().ServeHTTP(launchResponse, launch)
-	if launchResponse.Code != http.StatusCreated {
-		t.Fatalf("launch status = %d", launchResponse.Code)
+	response := performRequest(service.Routes(), http.MethodPost, "/v1/instances", `{
+		"apiVersion":"jangolova.interaction/v1alpha1","instanceId":"health-one",
+		"engine":{"adapter":"health-fixture"},"target":{"kind":"fixture"}
+	}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("connect status = %d: %s", response.Code, response.Body.String())
 	}
-
-	request := httptest.NewRequest(http.MethodGet, "/v1/instances/health-one", nil)
-	request.Header.Set("Authorization", "Bearer test-token")
-	response := httptest.NewRecorder()
-	service.Routes().ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("health status = %d", response.Code)
-	}
+	response = performRequest(service.Routes(), http.MethodGet, "/v1/instances/health-one", "")
 	var instance Instance
 	if err := json.NewDecoder(response.Body).Decode(&instance); err != nil {
 		t.Fatal(err)
 	}
-	if instance.Health.Status != orchestrator.EngineHealthUnhealthy ||
-		instance.Health.Message != "fixture probe failed" {
-		t.Fatalf("instance health = %#v", instance.Health)
-	}
-
-	eventsRequest := httptest.NewRequest(
-		http.MethodGet,
-		"/v1/instances/health-one/events?after=2",
-		nil,
-	)
-	eventsRequest.Header.Set("Authorization", "Bearer test-token")
-	eventsResponse := httptest.NewRecorder()
-	service.Routes().ServeHTTP(eventsResponse, eventsRequest)
-	var batch InstanceEventBatch
-	if err := json.NewDecoder(eventsResponse.Body).Decode(&batch); err != nil {
-		t.Fatal(err)
-	}
-	if len(batch.Events) != 1 || batch.Events[0].Type != "engine.health.unhealthy" {
-		t.Fatalf("health events = %#v", batch.Events)
+	if instance.Health.Status != orchestrator.EngineHealthUnhealthy || instance.Health.Message != "fixture probe failed" {
+		t.Fatalf("health = %#v", instance.Health)
 	}
 }
 
-func TestValidateLaunchRequestRejectsInvalidHandles(t *testing.T) {
+func TestValidateConnectRequestRejectsInvalidTargets(t *testing.T) {
 	t.Parallel()
-
-	base := LaunchRequest{
-		APIVersion: APIVersion,
-		InstanceID: "engine-one",
-		Engine:     EngineSpec{Adapter: "native-process"},
-	}
-	for name, value := range map[string]string{
-		"native/window": "value",
-		"native.window": "",
-		"native.layer":  "bad\x00value",
-	} {
-		request := base
-		request.Handles = map[string]string{name: value}
-		if err := validateLaunchRequest(request); err == nil {
-			t.Fatalf("handle %q=%q was accepted", name, value)
+	base := ConnectRequest{APIVersion: APIVersion, InstanceID: "engine-one", Engine: EngineSpec{Adapter: "playwright"}, Target: Target{Kind: "browser"}}
+	tests := []ConnectRequest{base, base, base}
+	tests[0].Target.Kind = ""
+	tests[1].Target.Endpoints = []TargetEndpoint{{Name: "cdp/path", Protocol: "cdp", URL: "http://localhost:9222"}}
+	tests[2].Target.Handles = map[string]string{"native.window": ""}
+	for index, request := range tests {
+		if err := validateConnectRequest(request); err == nil {
+			t.Fatalf("invalid target %d was accepted", index)
 		}
 	}
 }
 
 func TestEventQueryValidation(t *testing.T) {
 	t.Parallel()
-
 	if cursor, err := parseCursor("12"); err != nil || cursor != 12 {
 		t.Fatalf("parseCursor() = %d, %v", cursor, err)
 	}
@@ -343,6 +228,17 @@ func TestEventQueryValidation(t *testing.T) {
 		t.Fatalf("parseEventLimit() = %d, %v", limit, err)
 	}
 	if _, err := parseEventLimit("257"); err == nil {
-		t.Fatal("oversized event limit was accepted")
+		t.Fatal("oversized limit was accepted")
 	}
+}
+
+func performRequest(handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(method, path, strings.NewReader(body))
+	request.Header.Set("Authorization", "Bearer test-token")
+	if body != "" {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
 }

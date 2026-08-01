@@ -25,8 +25,8 @@ const (
 	defaultHTTPTimeout = 5 * time.Second
 )
 
-// WebSocketHostProvider is implemented by engine instances that own a bridge
-// endpoint created before their native process starts.
+// WebSocketHostProvider is implemented by interaction engines that accept a
+// cooperative connection from a caller-owned native target.
 type WebSocketHostProvider interface {
 	BridgeWebSocketHost() *WebSocketHost
 }
@@ -112,8 +112,9 @@ func (h *WebSocketHost) Endpoint() string {
 	return h.endpoint
 }
 
-// Token is an engine credential intended only for injection into the owned
-// native process. It must not be logged or placed in the endpoint URL.
+// Token is a short-lived interaction credential. A target owner such as Xallet
+// injects it into the caller-owned native process; it must not be logged or
+// placed in the endpoint URL.
 func (h *WebSocketHost) Token() string {
 	return h.token
 }
@@ -334,7 +335,7 @@ func (c *WebSocketConnection) Close() error {
 	c.closed = true
 	message := websocket.FormatCloseMessage(
 		websocket.CloseNormalClosure,
-		"session stopping",
+		"interaction disconnecting",
 	)
 	_ = c.connection.WriteControl(
 		websocket.CloseMessage,
