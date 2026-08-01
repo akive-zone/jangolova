@@ -74,8 +74,11 @@ to their advertised features.
 ## Transport mappings
 
 The browser transport exposes the five operations on `window.jangolova`.
-Jangolova attaches Playwright or Puppeteer to a caller-owned CDP endpoint and
+Jangolova attaches Playwright or Puppeteer to a caller-owned CDP/BiDi endpoint,
+or WebDriver Classic to a caller-owned existing driver session, and
 invokes the page bridge without owning the browser lifecycle.
+Safari MCP tools can also be transported through a caller-owned MCP relay and
+are discovered dynamically before being mapped to bridge capabilities.
 
 The native transport uses an authenticated loopback WebSocket. Jangolova sends:
 

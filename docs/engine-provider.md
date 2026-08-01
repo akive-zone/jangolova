@@ -41,6 +41,50 @@ Connect Playwright to Chromium that the caller already owns:
 }
 ```
 
+Puppeteer can instead attach to a caller-owned WebDriver BiDi endpoint:
+
+```json
+{
+  "apiVersion": "jangolova.interaction/v1alpha1",
+  "instanceId": "firefox-one",
+  "engine": {"adapter": "puppeteer"},
+  "target": {
+    "kind": "browser",
+    "endpoints": [{
+      "name": "webdriver-bidi",
+      "protocol": "webdriver-bidi",
+      "url": "ws://127.0.0.1:9223/session"
+    }]
+  }
+}
+```
+
+WebDriver Classic attaches to an existing caller-owned driver session. The
+target provider creates and later deletes that session:
+
+```json
+{
+  "apiVersion": "jangolova.interaction/v1alpha1",
+  "instanceId": "safari-one",
+  "engine": {"adapter": "webdriver-classic"},
+  "target": {
+    "kind": "browser",
+    "endpoints": [{
+      "name": "webdriver",
+      "protocol": "webdriver",
+      "url": "http://127.0.0.1:4444"
+    }],
+    "handles": {"webdriver.sessionId": "caller-created-session"}
+  }
+}
+```
+
+Use `webkit-webdriver` with the same target shape for WebKitGTK, WPE WebKit,
+or a WebKit-specific Safari attachment. For Safari MCP, select `safari-mcp` and
+provide an endpoint with protocol `mcp-streamable-http`; Jangolova discovers
+the relay's MCP tools and exposes their input schemas as interaction
+capabilities.
+
 The response describes the interaction instance, not the target:
 
 ```json
@@ -80,3 +124,6 @@ input schema; authorization remains the caller's responsibility.
 Deleting an instance disconnects Jangolova. It must not terminate the browser
 or native target. Lifecycle events are bounded to 256 entries and addressed by
 cursor through the `/events` operation.
+
+See [Browser target protocols and Xallet handoff](browser-target-protocols.md)
+for protocol selection, address translation, security, and cleanup ownership.

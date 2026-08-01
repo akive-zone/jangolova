@@ -34,6 +34,23 @@ func TestDecodeOptionsRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestPuppeteerAcceptsBiDiWhilePlaywrightRequiresCDP(t *testing.T) {
+	t.Parallel()
+	target := orchestrator.EngineTarget{
+		Kind: "browser",
+		Endpoints: []orchestrator.TargetEndpoint{{
+			Name: "bidi", Protocol: "webdriver-bidi", URL: "ws://127.0.0.1:9222/session",
+		}},
+	}
+	endpoint, protocol, ok := Puppeteer().targetEndpoint(target)
+	if !ok || protocol != "webdriver-bidi" || endpoint.URL == "" {
+		t.Fatalf("Puppeteer targetEndpoint() = %#v, %q, %v", endpoint, protocol, ok)
+	}
+	if _, _, ok := Playwright().targetEndpoint(target); ok {
+		t.Fatal("Playwright accepted a WebDriver BiDi-only target")
+	}
+}
+
 func TestInspectionFindsRepositoryWorker(t *testing.T) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {

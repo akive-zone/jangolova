@@ -1,5 +1,5 @@
 // Package browserautomation implements Playwright and Puppeteer interaction
-// engines that attach to caller-owned Chromium-compatible CDP targets.
+// engines that attach to caller-owned CDP or WebDriver BiDi browser targets.
 package browserautomation
 
 import (
@@ -92,7 +92,7 @@ var _ orchestrator.EngineEventSource = (*instance)(nil)
 var _ bridge.Caller = (*instance)(nil)
 
 func (a Adapter) InspectEngine(context.Context) orchestrator.EngineInspection {
-	capabilities := capabilityNames()
+	capabilities := capabilityNames(a.implementation)
 	if _, err := exec.LookPath("node"); err != nil {
 		return orchestrator.EngineInspection{Capabilities: capabilities, Message: "Node.js is required: " + err.Error()}
 	}
@@ -110,12 +110,15 @@ func (a Adapter) Connect(
 	if target.Kind != "browser" {
 		return nil, fmt.Errorf("%s requires target.kind browser", a.implementation)
 	}
-	endpoint, ok := target.Endpoint("cdp")
+	endpoint, targetProtocol, ok := a.targetEndpoint(target)
 	if !ok {
-		return nil, fmt.Errorf("%s requires a caller-owned cdp target endpoint", a.implementation)
+		return nil, fmt.Errorf("%s requires a compatible caller-owned browser endpoint", a.implementation)
 	}
-	if err := validateEndpoint(endpoint.URL); err != nil {
+	if err := validateEndpoint(endpoint.URL, targetProtocol); err != nil {
 		return nil, err
+	}
+	if targetProtocol == "webdriver-bidi" && !strings.HasPrefix(endpoint.URL, "ws://") && !strings.HasPrefix(endpoint.URL, "wss://") {
+		return nil, errors.New("WebDriver BiDi target endpoint must use ws or wss")
 	}
 	config, err := decodeOptions(spec.Options)
 	if err != nil {
@@ -158,7 +161,10 @@ func (a Adapter) Connect(
 	go running.readResponses(stdout)
 	go running.wait()
 
-	connectParams, _ := json.Marshal(map[string]string{"endpoint": endpoint.URL})
+	connectParams, _ := json.Marshal(map[string]string{
+		"endpoint": endpoint.URL,
+		"protocol": targetProtocol,
+	})
 	result, err := running.request(ctx, "connect", connectParams)
 	if err != nil {
 		running.terminate()
@@ -183,6 +189,18 @@ func (a Adapter) Connect(
 		}
 	}
 	return running, nil
+}
+
+func (a Adapter) targetEndpoint(target orchestrator.EngineTarget) (orchestrator.TargetEndpoint, string, bool) {
+	if endpoint, ok := target.Endpoint("cdp"); ok {
+		return endpoint, "cdp", true
+	}
+	if a.implementation == "puppeteer" {
+		if endpoint, ok := target.Endpoint("webdriver-bidi"); ok {
+			return endpoint, "webdriver-bidi", true
+		}
+	}
+	return orchestrator.TargetEndpoint{}, "", false
 }
 
 func (i *instance) Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
@@ -329,18 +347,18 @@ func decodeOptions(raw json.RawMessage) (options, error) {
 	return value, nil
 }
 
-func validateEndpoint(value string) error {
+func validateEndpoint(value, protocol string) error {
 	parsed, err := url.Parse(value)
 	if err != nil {
-		return fmt.Errorf("parse CDP target endpoint: %w", err)
+		return fmt.Errorf("parse %s target endpoint: %w", protocol, err)
 	}
 	switch parsed.Scheme {
 	case "http", "https", "ws", "wss":
 	default:
-		return fmt.Errorf("CDP target endpoint has unsupported scheme %q", parsed.Scheme)
+		return fmt.Errorf("%s target endpoint has unsupported scheme %q", protocol, parsed.Scheme)
 	}
 	if parsed.Host == "" {
-		return errors.New("CDP target endpoint must include a host")
+		return fmt.Errorf("%s target endpoint must include a host", protocol)
 	}
 	return nil
 }
@@ -365,8 +383,12 @@ func resolveWorker(configured string) (string, error) {
 	return "", errors.New("browser interaction worker not found; set JANGOLOVA_BROWSER_WORKER")
 }
 
-func capabilityNames() []string {
-	return []string{"act", "browser.click", "browser.evaluate", "browser.fill", "browser.navigate", "browser.press", "browser.screenshot", "capabilities", "describe", "events", "target.cdp"}
+func capabilityNames(implementation string) []string {
+	capabilities := []string{"act", "browser.click", "browser.evaluate", "browser.fill", "browser.navigate", "browser.press", "browser.screenshot", "capabilities", "describe", "events", "target.cdp"}
+	if implementation == "puppeteer" {
+		capabilities = append(capabilities, "target.webdriver-bidi")
+	}
+	return capabilities
 }
 
 func stableStrings(values []string) []string {

@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"jangolova/adapters/browserautomation"
+	"jangolova/adapters/safarimcp"
+	"jangolova/adapters/webdriverclassic"
 	"jangolova/internal/orchestrator"
 )
 
@@ -16,6 +18,15 @@ func EngineRegistry() (*orchestrator.Registry, error) {
 	}
 	if err := registry.RegisterEngine("puppeteer", browserautomation.Puppeteer()); err != nil {
 		return nil, fmt.Errorf("register Puppeteer interaction engine: %w", err)
+	}
+	if err := registry.RegisterEngine("webdriver-classic", webdriverclassic.Generic()); err != nil {
+		return nil, fmt.Errorf("register WebDriver Classic interaction engine: %w", err)
+	}
+	if err := registry.RegisterEngine("webkit-webdriver", webdriverclassic.WebKit()); err != nil {
+		return nil, fmt.Errorf("register WebKit WebDriver interaction engine: %w", err)
+	}
+	if err := registry.RegisterEngine("safari-mcp", safarimcp.Adapter{}); err != nil {
+		return nil, fmt.Errorf("register Safari MCP interaction engine: %w", err)
 	}
 	return registry, nil
 }

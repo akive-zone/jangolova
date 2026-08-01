@@ -19,7 +19,9 @@ RUN apt-get update \
     ca-certificates \
     chromium \
     curl \
+    firefox-esr \
     fonts-liberation \
+    webkit2gtk-driver \
     xvfb \
   && rm -rf /var/lib/apt/lists/*
 

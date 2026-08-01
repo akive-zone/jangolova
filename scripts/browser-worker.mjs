@@ -45,7 +45,7 @@ async function handleLine(line) {
 }
 
 async function dispatch(method, params) {
-  if (method === "connect") return connect(params.endpoint);
+  if (method === "connect") return connect(params.endpoint, params.protocol);
   if (method === "disconnect") return disconnect();
   if (method === "health") return { connected: isConnected() };
   requireConnection();
@@ -63,25 +63,28 @@ async function dispatch(method, params) {
   throw new Error(`unsupported interaction method ${method}`);
 }
 
-async function connect(endpoint) {
+async function connect(endpoint, protocol = "cdp") {
   if (typeof endpoint !== "string" || endpoint.length === 0) {
-    throw new Error("caller-owned CDP endpoint is required");
+    throw new Error("caller-owned browser endpoint is required");
   }
   if (adapter === "playwright") {
+    if (protocol !== "cdp") throw new Error("Playwright attachment currently requires CDP");
     const { chromium } = await import("playwright-core");
     browser = await chromium.connectOverCDP(endpoint);
   } else {
     const { default: puppeteer } = await import("puppeteer-core");
-    const option = endpoint.startsWith("ws")
-      ? { browserWSEndpoint: endpoint }
-      : { browserURL: endpoint };
+    const option = protocol === "webdriver-bidi"
+      ? { browserWSEndpoint: endpoint, protocol: "webDriverBiDi" }
+      : endpoint.startsWith("ws")
+        ? { browserWSEndpoint: endpoint, protocol: "cdp" }
+        : { browserURL: endpoint, protocol: "cdp" };
     browser = await puppeteer.connect(option);
   }
   browser.on("disconnected", () => {
     disconnected = true;
     appendEvent("browser.disconnected", {});
   });
-  appendEvent("browser.connected", { adapter });
+  appendEvent("browser.connected", { adapter, protocol });
   return { capabilities: capabilities.map((item) => item.name) };
 }
 

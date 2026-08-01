@@ -18,6 +18,29 @@ jangolova connect-engine \
 Puppeteer uses the same command with `--adapter puppeteer`. Interrupting the
 command disconnects the adapter and leaves Chromium running.
 
+For Firefox, start it with WebDriver BiDi enabled and give Puppeteer the direct
+session endpoint:
+
+```sh
+jangolova connect-engine \
+  --adapter puppeteer \
+  --target-kind browser \
+  --endpoint webdriver-bidi=ws://127.0.0.1:9223/session
+```
+
+Safari uses WebDriver Classic. The target provider must start `safaridriver`,
+create the browser session, and pass both its HTTP endpoint and session ID to
+the provider API. Jangolova attaches to that session but never deletes it.
+
+WebKitGTK and WPE WebKit use the same existing-session contract with the
+`webkit-webdriver` adapter. The native host or Xallet starts
+`WebKitWebDriver`/`WPEWebDriver`, creates the session, and supplies its ID.
+
+Safari 27 beta and Safari Technology Preview can also use `safari-mcp`. Because
+Apple exposes `safaridriver --mcp` over stdio, the target provider owns that
+process and a private stdio-to-Streamable-HTTP MCP relay. Jangolova receives
+only the relay endpoint.
+
 ## Standalone provider
 
 ```sh
@@ -39,9 +62,10 @@ docker run --rm \
   serve-engine-provider --bind 0.0.0.0:7391
 ```
 
-The image contains Jangolova, Node.js, Playwright Core, Puppeteer Core, and the
-browser interaction worker. It deliberately contains no Chromium or display
-server.
+The image contains Jangolova, Node.js, Playwright Core, Puppeteer Core, the
+browser interaction worker, and the dependency-free WebDriver Classic adapter.
+It also contains the Safari MCP client. It deliberately contains no Chromium,
+Firefox, WebKit runtime, Safari driver, or display server.
 
 ## Xallet-managed
 

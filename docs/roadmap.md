@@ -16,7 +16,15 @@
   the authenticated provider.
 - [x] Add active connection health and lifecycle events.
 - [x] Verify disconnect does not terminate caller-owned Chromium.
-- [ ] Add WebDriver BiDi interaction adapters for WebKit and Gecko targets.
+- [x] Add Puppeteer attachment over WebDriver BiDi and verify it against
+  caller-owned Firefox.
+- [x] Add target-preserving W3C WebDriver Classic attachment for existing
+  Safari and other browser sessions.
+- [x] Add a named WebKit WebDriver adapter and verify it against a caller-owned
+  WebKitGTK session.
+- [x] Add a Safari MCP client over a caller-owned Streamable HTTP relay with
+  dynamic tool discovery.
+- [ ] Add a Safari 27/STP live fixture when that runtime is available in CI.
 - [ ] Add richer page observation and accessibility descriptions.
 
 ## Phase 3: Presentation engines

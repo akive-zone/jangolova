@@ -17,6 +17,7 @@ test("browser worker owns interaction libraries but not a browser runtime", asyn
   assert.equal(manifest.dependencies["puppeteer-core"], "25.4.0");
   assert.match(worker, /chromium\.connectOverCDP/);
   assert.match(worker, /puppeteer\.connect/);
+  assert.match(worker, /protocol: "webDriverBiDi"/);
   assert.doesNotMatch(worker, /\.launch\s*\(/);
   for (const method of ["hello", "capabilities", "describe", "act", "events"]) {
     assert.ok(worker.includes(`method === "${method}"`), `missing ${method}`);

@@ -12,7 +12,11 @@ same target endpoints and handles without Xallet.
 ## Included interaction engines
 
 - Playwright attachment to a caller-owned Chromium-compatible CDP target.
-- Puppeteer attachment to the same target contract.
+- Puppeteer attachment over CDP or WebDriver BiDi, including Firefox.
+- WebDriver Classic attachment to an existing caller-owned session, including
+  Safari's `safaridriver`.
+- Named WebKit WebDriver attachment for WebKitGTK, WPE WebKit, and Safari.
+- Safari MCP attachment through a caller-owned Streamable HTTP relay.
 - Agent-facing `hello`, `capabilities`, `describe`, `act`, and `events` calls.
 - Three.js dynamic presentation example.
 - Authenticated cooperative bridge and Unity Package Manager integration.
@@ -53,10 +57,11 @@ exposes their semantic calls at `POST /v1/instances/{id}/call`.
 
 ```text
 Agent -> Jangolova interaction engine -> caller-owned target
-             Playwright                    Chromium
-             Puppeteer                     native application
-             Three.js                      display/runtime
-             Unity/Unreal bridge
+             Playwright --- CDP ---------- Chromium
+             Puppeteer ---- CDP/BiDi ----- Chromium/Firefox
+             WebDriver ---- existing ----- WebKitGTK/WPE/Safari
+             Safari MCP --- MCP relay ---- Safari 27 beta/STP
+             Three.js/Unity/Unreal ------- presentation target
 ```
 
 The repository boundary test prevents Chromium launch, native-process launch,
@@ -66,7 +71,8 @@ targets solely to verify attachment portability.
 
 See [Architecture](docs/architecture.md), [Interaction provider](docs/engine-provider.md),
 [Deployment modes](docs/deployment-modes.md), [Bridge protocol](docs/bridge-protocol.md),
-and [Xallet boundary](docs/xallet-boundary.md).
+[browser target protocols](docs/browser-target-protocols.md), and
+[Xallet boundary](docs/xallet-boundary.md).
 
 ## Tests
 

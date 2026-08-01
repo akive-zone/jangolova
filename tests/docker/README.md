@@ -16,6 +16,22 @@ Run both browser interaction engines against test-owned Chromium and Xvfb:
 docker compose -f tests/docker/compose.yaml run --rm engine-test
 ```
 
+Run Puppeteer over WebDriver BiDi against test-owned Firefox:
+
+```bash
+docker compose -f tests/docker/compose.yaml run --rm \
+  --entrypoint tests/docker/firefox-bidi-smoke-test.sh \
+  engine-test
+```
+
+Run WebDriver Classic against a test-owned WebKitGTK session:
+
+```bash
+docker compose -f tests/docker/compose.yaml run --rm \
+  --entrypoint tests/docker/webkit-webdriver-smoke-test.sh \
+  engine-test
+```
+
 Run the Unity package contract test:
 
 ```bash
@@ -24,7 +40,8 @@ docker compose -f tests/docker/compose.yaml run --rm \
   engine-test
 ```
 
-The test launches Chromium directly, gives its CDP endpoint to Jangolova, and
-verifies that disconnecting Jangolova leaves Chromium running. No VNC,
-session, public-port, profile-volume, or production placement configuration
-belongs to this harness.
+The fixtures launch Chromium, Firefox, or WebKitGTK directly, give only the
+CDP, WebDriver BiDi, or existing WebDriver-session coordinates to Jangolova,
+and verify that disconnecting Jangolova leaves the browser running. No VNC,
+public-port, profile-volume, or production placement configuration belongs to
+this harness.

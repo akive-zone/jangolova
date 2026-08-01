@@ -105,6 +105,10 @@ var forbiddenSourceFragments = []string{
 	"--remote-debugging-port=",
 	"LaunchPersistentContext(",
 	"puppeteer.launch(",
+	"exec.Command(\"safaridriver\"",
+	"exec.Command(\"firefox",
+	"exec.Command(\"WebKitWebDriver\"",
+	"exec.Command(\"WPEWebDriver\"",
 }
 
 func forbiddenPathComponent(name string) bool {
