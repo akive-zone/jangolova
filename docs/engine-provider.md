@@ -1,8 +1,9 @@
 # Interaction Engine Provider
 
-Jangolova exposes interaction engines through the authenticated
-`jangolova.interaction/v1alpha1` API. Xallet is one target provider, not a
-Jangolova runtime dependency.
+Jangolova implements the authenticated, provider-neutral
+`interaction.engine/v1alpha1` API. Xallet is one target provider, not a
+Jangolova runtime dependency, and other providers can implement the same
+contract.
 
 ```bash
 export JANGOLOVA_PROVIDER_TOKEN="a-random-session-secret"
@@ -23,7 +24,7 @@ Connect Playwright to Chromium that the caller already owns:
 
 ```json
 {
-  "apiVersion": "jangolova.interaction/v1alpha1",
+  "apiVersion": "interaction.engine/v1alpha1",
   "instanceId": "browser-one",
   "engine": {
     "adapter": "playwright"
@@ -45,7 +46,7 @@ Puppeteer can instead attach to a caller-owned WebDriver BiDi endpoint:
 
 ```json
 {
-  "apiVersion": "jangolova.interaction/v1alpha1",
+  "apiVersion": "interaction.engine/v1alpha1",
   "instanceId": "firefox-one",
   "engine": {"adapter": "puppeteer"},
   "target": {
@@ -64,7 +65,7 @@ target provider creates and later deletes that session:
 
 ```json
 {
-  "apiVersion": "jangolova.interaction/v1alpha1",
+  "apiVersion": "interaction.engine/v1alpha1",
   "instanceId": "safari-one",
   "engine": {"adapter": "webdriver-classic"},
   "target": {
@@ -89,7 +90,7 @@ The response describes the interaction instance, not the target:
 
 ```json
 {
-  "apiVersion": "jangolova.interaction/v1alpha1",
+  "apiVersion": "interaction.engine/v1alpha1",
   "instanceId": "browser-one",
   "adapter": "playwright",
   "status": "connected",

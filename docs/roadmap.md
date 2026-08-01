@@ -35,7 +35,16 @@
 - [ ] Expose Unity bridge attachment through the interaction provider.
 - [ ] Add an Unreal plugin implementing the same semantic contract.
 
-## Phase 4: Hardening
+## Phase 4: General display interaction
+
+- [ ] Define provider-neutral capture, coordinate-space, focus, pointer, and
+  keyboard target contracts.
+- [ ] Add display observation and pointer/keyboard semantic capabilities.
+- [ ] Add policy metadata for coordinate clicks, typing, and sensitive input.
+- [ ] Verify native-host and Xallet-provided display contracts with the same
+  adapter conformance suite.
+
+## Phase 5: Hardening
 
 - [ ] Add per-capability policy hooks and audit records.
 - [ ] Add orphan recovery and reconnection.

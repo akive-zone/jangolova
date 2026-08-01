@@ -3,6 +3,11 @@
 Jangolova owns interaction and presentation engines. Xallet, a native host, or
 another operator owns the target runtimes with which those engines interact.
 
+Interaction includes operating semantic browser/application interfaces and
+requesting display-level pointer/keyboard actions. Presentation includes
+creating and updating dynamic 2D/3D interfaces. Both use the common semantic
+protocol while target runtime and display ownership remain external.
+
 ## System boundary
 
 ```text
@@ -37,6 +42,8 @@ Jangolova owns:
 - semantic capability discovery, description, actions, observations, events,
   and interaction-session health;
 - worker processes used internally by an interaction adapter.
+- provider-neutral adapters that translate display observations and
+  pointer/keyboard intent into a caller-supplied surface/input contract.
 
 The target provider owns:
 
@@ -74,7 +81,7 @@ Every callable interaction engine uses the common bridge methods:
 - `act`
 - `events`
 
-The authenticated `jangolova.interaction/v1alpha1` HTTP API transports those
+The authenticated, provider-neutral `interaction.engine/v1alpha1` HTTP API transports those
 calls. The cooperative Unity bridge implements the same vocabulary.
 
 ## Package direction
@@ -93,3 +100,5 @@ tests/docker/               target-owning portability fixture only
 ```
 
 No package imports Xallet. No product adapter provisions a target runtime.
+The complete interface model is documented in
+[Interface creation and operation](interface-model.md).

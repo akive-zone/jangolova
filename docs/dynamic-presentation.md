@@ -1,6 +1,9 @@
 # Dynamic Presentation
 
 Jangolova owns presentation integrations as well as imperative interaction.
+Created presentations are not passive output: they expose semantic state,
+actions, and events so agents can subsequently operate the interfaces they
+created.
 
 ## Web and Three.js
 
@@ -24,3 +27,7 @@ follow the same boundary with an engine-specific plugin.
 
 Presentation capabilities are descriptive, not authorization. The calling
 agent system decides which write or externally-effectful actions are allowed.
+
+Presentation artifacts and behavior belong to Jangolova. Serving, player
+launch, graphics/display allocation, and process lifecycle belong to Xallet or
+another target provider.

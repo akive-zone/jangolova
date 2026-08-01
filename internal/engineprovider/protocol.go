@@ -1,5 +1,6 @@
-// Package engineprovider implements Jangolova's deployment-neutral
-// interaction-engine provider. Xallet is one supported target provider.
+// Package engineprovider implements the provider-neutral interaction-engine
+// contract. Jangolova is one implementation and Xallet is one supported
+// target provider.
 package engineprovider
 
 import (
@@ -7,7 +8,7 @@ import (
 	"time"
 )
 
-const APIVersion = "jangolova.interaction/v1alpha1"
+const APIVersion = "interaction.engine/v1alpha1"
 
 type EngineDescriptor struct {
 	Adapter      string   `json:"adapter"`

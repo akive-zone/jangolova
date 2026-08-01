@@ -50,7 +50,7 @@ advertises WebKit-specific discovery metadata.
 
 ```json
 {
-  "apiVersion": "jangolova.interaction/v1alpha1",
+  "apiVersion": "interaction.engine/v1alpha1",
   "instanceId": "chromium-one",
   "engine": {"adapter": "playwright"},
   "target": {
@@ -71,7 +71,7 @@ Chromium with a private debugging endpoint and controls when Chromium stops.
 
 ```json
 {
-  "apiVersion": "jangolova.interaction/v1alpha1",
+  "apiVersion": "interaction.engine/v1alpha1",
   "instanceId": "firefox-one",
   "engine": {"adapter": "puppeteer"},
   "target": {
@@ -94,7 +94,7 @@ browser survives Jangolova disconnect.
 
 ```json
 {
-  "apiVersion": "jangolova.interaction/v1alpha1",
+  "apiVersion": "interaction.engine/v1alpha1",
   "instanceId": "safari-one",
   "engine": {"adapter": "webdriver-classic"},
   "target": {
@@ -123,7 +123,7 @@ Use the same endpoint and handle shape as Safari, but select
 
 ```json
 {
-  "apiVersion": "jangolova.interaction/v1alpha1",
+  "apiVersion": "interaction.engine/v1alpha1",
   "instanceId": "webkit-one",
   "engine": {"adapter": "webkit-webdriver"},
   "target": {
@@ -155,7 +155,7 @@ converts the stdio transport to Streamable HTTP.
 
 ```json
 {
-  "apiVersion": "jangolova.interaction/v1alpha1",
+  "apiVersion": "interaction.engine/v1alpha1",
   "instanceId": "safari-mcp-one",
   "engine": {
     "adapter": "safari-mcp",

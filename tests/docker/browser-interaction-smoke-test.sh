@@ -43,7 +43,7 @@ for adapter in playwright puppeteer; do
   curl -fsS \
     -H "Authorization: Bearer ${token}" \
     -H "Content-Type: application/json" \
-    -d "{\"apiVersion\":\"jangolova.interaction/v1alpha1\",\"instanceId\":\"${adapter}-one\",\"engine\":{\"adapter\":\"${adapter}\",\"source\":\"file:///app/tests/fixture.html\"},\"target\":{\"kind\":\"browser\",\"endpoints\":[{\"name\":\"cdp\",\"protocol\":\"cdp\",\"url\":\"http://127.0.0.1:9222\"}]}}" \
+    -d "{\"apiVersion\":\"interaction.engine/v1alpha1\",\"instanceId\":\"${adapter}-one\",\"engine\":{\"adapter\":\"${adapter}\",\"source\":\"file:///app/tests/fixture.html\"},\"target\":{\"kind\":\"browser\",\"endpoints\":[{\"name\":\"cdp\",\"protocol\":\"cdp\",\"url\":\"http://127.0.0.1:9222\"}]}}" \
     http://127.0.0.1:7391/v1/instances >/tmp/"${adapter}"-connect.json
 
   curl -fsS \

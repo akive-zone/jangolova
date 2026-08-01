@@ -46,7 +46,7 @@ process.stdout.write(value.value.sessionId);
 node - "${session_id}" <<'NODE' >/tmp/webkit-connect-request.json
 const sessionId = process.argv[2];
 process.stdout.write(JSON.stringify({
-  apiVersion: "jangolova.interaction/v1alpha1",
+  apiVersion: "interaction.engine/v1alpha1",
   instanceId: "webkit-one",
   engine: {adapter: "webkit-webdriver", source: "file:///app/tests/fixture.html"},
   target: {

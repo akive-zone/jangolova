@@ -34,7 +34,7 @@ done
 curl -fsS \
   -H "Authorization: Bearer ${token}" \
   -H "Content-Type: application/json" \
-  -d '{"apiVersion":"jangolova.interaction/v1alpha1","instanceId":"firefox-one","engine":{"adapter":"puppeteer","source":"file:///app/tests/fixture.html"},"target":{"kind":"browser","endpoints":[{"name":"bidi","protocol":"webdriver-bidi","url":"ws://127.0.0.1:9223/session"}]}}' \
+  -d '{"apiVersion":"interaction.engine/v1alpha1","instanceId":"firefox-one","engine":{"adapter":"puppeteer","source":"file:///app/tests/fixture.html"},"target":{"kind":"browser","endpoints":[{"name":"bidi","protocol":"webdriver-bidi","url":"ws://127.0.0.1:9223/session"}]}}' \
   http://127.0.0.1:7391/v1/instances >/tmp/firefox-connect.json
 
 curl -fsS \

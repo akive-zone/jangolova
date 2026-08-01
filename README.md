@@ -4,6 +4,10 @@ Jangolova is a deployment-neutral interaction and presentation engine toolkit.
 It uses Playwright, Puppeteer, Three.js, Unity, Unreal, and cooperative bridge
 integrations to observe, operate, and present through caller-owned targets.
 
+Its product goal has two equal parts: operate existing interfaces—including
+clicking and typing through semantic or display-level contracts—and create
+dynamic 2D/3D interfaces that agents can present and update.
+
 Jangolova does not provision Chromium, native applications, displays,
 containers, VMs, networking, or credentials. Xallet owns those concerns when
 the products run together; a native user or another operator can provide the
@@ -71,6 +75,7 @@ targets solely to verify attachment portability.
 
 See [Architecture](docs/architecture.md), [Interaction provider](docs/engine-provider.md),
 [Deployment modes](docs/deployment-modes.md), [Bridge protocol](docs/bridge-protocol.md),
+[interface creation and operation](docs/interface-model.md),
 [browser target protocols](docs/browser-target-protocols.md), and
 [Xallet boundary](docs/xallet-boundary.md).
 

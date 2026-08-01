@@ -1,7 +1,7 @@
 # Vision
 
-Jangolova gives agents one semantic way to interact with existing visual and
-interactive systems, regardless of where those systems run.
+Jangolova gives agents one semantic way to operate existing interfaces and
+create dynamic interfaces, regardless of where those systems run.
 
 > Given a caller-owned target, attach the appropriate interaction engine and
 > expose what the agent can observe, do, and present.
@@ -16,3 +16,12 @@ private endpoint. Standalone users can supply the same endpoint directly.
 
 The durable abstraction is semantic interaction—`capabilities`, `describe`,
 `act`, and `events`—not a specific browser, display server, or container tool.
+
+Operating includes semantic browser/scene actions and, when no richer contract
+exists, display-level observation plus pointer and keyboard actions. Creating
+includes dynamic web, Three.js, Unity, Unreal, and future presentation engines.
+In both cases Jangolova owns interface behavior while the target provider owns
+the runtime, display, and lifecycle.
+
+See [Interface creation and operation](interface-model.md) for the complete
+product model.

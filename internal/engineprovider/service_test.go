@@ -78,7 +78,7 @@ func TestServiceConnectsCallsAndDisconnectsEngine(t *testing.T) {
 	handler := service.Routes()
 
 	body := `{
-		"apiVersion":"jangolova.interaction/v1alpha1",
+		"apiVersion":"interaction.engine/v1alpha1",
 		"instanceId":"browser-one",
 		"engine":{"adapter":"playwright"},
 		"target":{"kind":"browser","endpoints":[{"name":"cdp","protocol":"cdp","url":"http://127.0.0.1:9222"}],"handles":{"native.window":"window-1234"}}
@@ -167,7 +167,7 @@ func TestServiceRejectsEmptyEngineInstance(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := performRequest(service.Routes(), http.MethodPost, "/v1/instances", `{
-		"apiVersion":"jangolova.interaction/v1alpha1","instanceId":"empty-one",
+		"apiVersion":"interaction.engine/v1alpha1","instanceId":"empty-one",
 		"engine":{"adapter":"empty"},"target":{"kind":"browser"}
 	}`)
 	if response.Code != http.StatusBadGateway {
@@ -186,7 +186,7 @@ func TestServiceActivelyProbesInstanceHealth(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := performRequest(service.Routes(), http.MethodPost, "/v1/instances", `{
-		"apiVersion":"jangolova.interaction/v1alpha1","instanceId":"health-one",
+		"apiVersion":"interaction.engine/v1alpha1","instanceId":"health-one",
 		"engine":{"adapter":"health-fixture"},"target":{"kind":"fixture"}
 	}`)
 	if response.Code != http.StatusCreated {
