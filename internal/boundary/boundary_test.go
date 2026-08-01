@@ -72,6 +72,18 @@ func TestRepositoryOwnsEngineCodeOnly(t *testing.T) {
 			relative != "deploy/engine-runtime/Containerfile" {
 			t.Errorf("deployment topology must live under tests or Xallet: %s", relative)
 		}
+		if relative == "deploy/engine-runtime/Containerfile" {
+			contents, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			lower := strings.ToLower(string(contents))
+			for _, fragment := range []string{"chromium", "google-chrome", "firefox", "xvfb", "webkit"} {
+				if strings.Contains(lower, fragment) {
+					t.Errorf("interaction runtime image packages target runtime %q", fragment)
+				}
+			}
+		}
 		return nil
 	}); err != nil {
 		t.Fatalf("scan deployment files: %v", err)
