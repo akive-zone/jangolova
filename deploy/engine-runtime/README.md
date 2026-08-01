@@ -4,12 +4,14 @@ This optional artifact packages the Jangolova engine provider with Chromium.
 It can be run independently or as a Xallet-managed workload. It contains engine
 lifecycle code only and does not define display/container topology.
 
-Build and publish it from the Jangolova repository:
+Build it locally from the Jangolova repository:
 
 ```sh
 docker build -f deploy/engine-runtime/Containerfile \
-  -t ghcr.io/akive/jangolova-engine-runtime:latest .
+  -t jangolova/engine-runtime:latest .
 ```
+
+This is currently a local image name; no registry publication is implied.
 
 The provider requires `JANGOLOVA_PROVIDER_TOKEN`. Its operator supplies that
 secret and any `DISPLAY` or native environment. The image intentionally does

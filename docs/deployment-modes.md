@@ -74,7 +74,7 @@ docker run --rm \
   -e DISPLAY=surface:99 \
   -p 127.0.0.1:7391:7391 \
   -p 127.0.0.1:9222:9222 \
-  jangolova-engine-runtime \
+  jangolova/engine-runtime:latest \
   serve-engine-provider --bind 0.0.0.0:7391
 ```
 
