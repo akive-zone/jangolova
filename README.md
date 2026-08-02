@@ -94,6 +94,17 @@ jangolova serve-engine-provider --bind 127.0.0.1:7391
 The provider accepts caller-owned targets, creates interaction instances, and
 exposes their semantic calls at `POST /v1/instances/{id}/call`.
 
+Run Grimlock's authenticated agent API (the model endpoint and credentials
+are supplied per session by the caller):
+
+```bash
+export JANGOLOVA_GRIMLOCK_TOKEN="replace-with-a-random-secret"
+jangolova serve-grimlock --bind 127.0.0.1:7392
+```
+
+See [Grimlock](docs/grimlock.md) for the session, run, event, approval, and
+target-binding contract.
+
 Connection references, expiry, private certificate authorities, and output
 redaction are documented in
 [target connection security](docs/target-connection-security.md).

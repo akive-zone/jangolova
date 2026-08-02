@@ -55,6 +55,16 @@ type Runtime struct {
 	connectors *ConnectorRegistry
 }
 
+// ModelProtocols returns the registered caller-selectable model connector
+// protocols in stable order. Northbound adapters may use this for discovery;
+// it does not expose credentials or model gateway material.
+func (r *Runtime) ModelProtocols() []string {
+	if r == nil || r.connectors == nil {
+		return nil
+	}
+	return r.connectors.Protocols()
+}
+
 func NewRuntime(resolver targetconn.Resolver, connectors *ConnectorRegistry) (*Runtime, error) {
 	if resolver == nil {
 		return nil, errors.New("Grimlock model connection resolver is required")

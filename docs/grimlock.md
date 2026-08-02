@@ -147,6 +147,66 @@ Jangolova operations as tools/resources. ACP carries interactive client
 sessions. A2A is distinct from ACP and is used for agent-to-agent delegation.
 Protocol adapters must not duplicate model, policy, or tool-routing logic.
 
+## Native HTTP API
+
+`jangolova serve-grimlock` exposes the first northbound adapter. It is
+authenticated with `Authorization: Bearer <JANGOLOVA_GRIMLOCK_TOKEN>`; only
+`GET /healthz` is unauthenticated.
+
+The application contract is `agent.grimlock/v1alpha1`:
+
+| Route | Purpose |
+| --- | --- |
+| `GET /v1/connectors` | Discover registered model connector protocols. |
+| `POST /v1/sessions` | Create a session from a caller-supplied model profile and one or more target bindings. |
+| `GET /v1/sessions/{id}` | Inspect status and pending approvals. |
+| `DELETE /v1/sessions/{id}` | Release model/adapter resources without stopping caller-owned targets. |
+| `POST /v1/sessions/{id}/run` | Submit text; set `stream: true` for Server-Sent Events. |
+| `GET /v1/sessions/{id}/events?after=N` | Read retained ADK execution events by cursor. |
+| `POST /v1/sessions/{id}/confirmations/{approvalId}` | Approve or reject a pending write/external capability. |
+| `POST /v1/sessions/{id}/cancel` | Cancel the active run while preserving the session and target. |
+
+Create requests embed the existing provider-neutral target descriptor. An
+engine adapter is selected explicitly with `agent.engine.adapter`, or with
+`auto` from the target protocols and required capabilities. `allowWrites` is
+false by default, so a binding advertises observation-only capabilities. A
+binding that opts into writes still requires ADK confirmation for write and
+external effects and is authorized again immediately before execution.
+
+Example shape (the endpoint and opaque references belong to the caller):
+
+```json
+{
+  "apiVersion": "agent.grimlock/v1alpha1",
+  "userId": "application-one",
+  "agent": {
+    "sessionId": "browser-task",
+    "model": {
+      "apiVersion": "agent.model/v1alpha1",
+      "profileId": "application-model",
+      "protocol": "openai-compatible",
+      "endpoint": "https://ai-gateway.example/v1",
+      "model": "company-approved-model",
+      "credentialRef": "application-ai-credential"
+    }
+  },
+  "bindings": [{
+    "interactionId": "browser",
+    "engine": {"adapter": "auto", "requiredCapabilities": ["target.cdp"]},
+    "target": {
+      "apiVersion": "interaction.target/v1alpha1",
+      "targetId": "browser-target",
+      "kind": "browser",
+      "endpoints": [{"name": "cdp", "protocol": "cdp", "url": "https://browser.example"}]
+    }
+  }]
+}
+```
+
+The service keeps a bounded in-memory event history for the process lifetime.
+MCP, ACP, and A2A adapters should be layered over this same service and must
+not create a second agent runtime.
+
 ## Delivery sequence
 
 1. Model profile validation, opaque material resolution, and connector
@@ -158,7 +218,5 @@ Protocol adapters must not duplicate model, policy, or tool-routing logic.
 6. ACP and A2A adapters over the same service.
 7. Persistent session stores, quotas, tracing, and multi-agent workflows.
 
-The current implementation completes steps 1 through 3. The next slice is the
-native HTTP application service: lifecycle-managed sessions, run input,
-streaming execution events, confirmations, cancellation, and cleanup. MCP,
-ACP, and A2A will adapt that service rather than owning parallel runtimes.
+The current implementation completes steps 1 through 4. MCP, ACP, and A2A will
+adapt this service rather than owning parallel runtimes.

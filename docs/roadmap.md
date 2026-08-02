@@ -10,7 +10,7 @@
   OpenAI-compatible gateway connector.
 - [x] Adapt Jangolova capabilities into effect-classified ADK tools with
   approval checks immediately before execution.
-- [ ] Add the native Grimlock HTTP session/run/event API.
+- [x] Add the native Grimlock HTTP session/run/event API.
 - [ ] Add MCP, ACP, and A2A adapters over the same Grimlock application service.
 - [ ] Add persistent agent sessions, budgets, tracing, and multi-agent
   workflows.
@@ -83,7 +83,7 @@
   operations without raw AppleScript, raw Apple Events, or unrestricted
   Accessibility-tree passthrough.
 - [x] Add shared Go validation and a policy-filtered macOS capability mapper.
-- [ ] Implement a caller-owned macOS native helper that negotiates Automation
+- [x] Implement a caller-owned macOS native helper that negotiates Automation
   and Accessibility consent and exposes only mapped capabilities.
 - [ ] Run shared lifecycle conformance against web and fake/native macOS
   backends, including stale surface references and permission revocation.

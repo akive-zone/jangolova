@@ -19,6 +19,8 @@ func main() {
 		err = connectEngineCommand(os.Args[2:])
 	case "serve-engine-provider":
 		err = serveEngineProviderCommand(os.Args[2:])
+	case "serve-grimlock":
+		err = serveGrimlockCommand(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 		return
@@ -39,5 +41,6 @@ func usage() {
 Commands:
   engines                 Discover interaction-engine adapters and availability
   connect-engine          Attach one engine to a caller-owned target
-  serve-engine-provider   Serve the authenticated interaction-engine API`)
+  serve-engine-provider   Serve the authenticated interaction-engine API
+  serve-grimlock           Serve the authenticated Grimlock agent API`)
 }
