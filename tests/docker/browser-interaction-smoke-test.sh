@@ -71,4 +71,19 @@ for adapter in playwright puppeteer; do
   curl -fsS http://127.0.0.1:9222/json/version >/dev/null
 done
 
-echo "Playwright and Puppeteer interaction smoke tests passed against a caller-owned browser"
+curl -fsS \
+  -H "Authorization: Bearer ${token}" \
+  -H "Content-Type: application/json" \
+  -d '{"apiVersion":"interaction.engine/v1alpha1","instanceId":"cymonkey-cdp","engine":{"adapter":"cymonkey","requiredCapabilities":["augmentation.install","dom.query","storage.set"],"options":{"backend":"cdp","extension":{"mode":"disabled"}}},"target":{"kind":"browser","endpoints":[{"name":"cdp","protocol":"cdp","url":"http://127.0.0.1:9222"}]}}' \
+  http://127.0.0.1:7391/v1/instances >/tmp/cymonkey-cdp-connect.json
+
+JANGOLOVA_PROVIDER_TOKEN="${token}" node tests/cymonkey-live-client.mjs \
+  --provider http://127.0.0.1:7391 \
+  --instance cymonkey-cdp \
+  --expect-backend cdp
+
+curl -fsS -X DELETE -H "Authorization: Bearer ${token}" \
+  http://127.0.0.1:7391/v1/instances/cymonkey-cdp
+curl -fsS http://127.0.0.1:9222/json/version >/dev/null
+
+echo "Playwright, Puppeteer, and Cymonkey CDP smoke tests passed against a caller-owned browser"

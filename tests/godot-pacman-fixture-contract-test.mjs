@@ -1,0 +1,33 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const packageRoot = new URL("../pkg/godot-pacman/", import.meta.url);
+const registry = await readFile(new URL("addons/jangolova_pacman/pacman_registry.gd", packageRoot), "utf8");
+const protocol = await readFile(new URL("addons/jangolova_pacman/pacman_protocol.gd", packageRoot), "utf8");
+const host = await readFile(new URL("addons/jangolova_pacman/pacman_websocket_host.gd", packageRoot), "utf8");
+const fixture = await readFile(new URL("godot-pacman-fixture/fixture.gd", import.meta.url), "utf8");
+const project = await readFile(new URL("godot-pacman-fixture/project.godot", import.meta.url), "utf8");
+const container = await readFile(new URL("../deploy/godot-pacman-fixture/Containerfile", import.meta.url), "utf8");
+const goProtocol = await readFile(new URL("../internal/pacman/protocol.go", import.meta.url), "utf8");
+
+assert.match(protocol, /jangolova\.pacman\/v1alpha1/);
+assert.equal(protocol.match(/VERSION := "([^"]+)"/)?.[1], goProtocol.match(/ProtocolVersion = "([^"]+)"/)?.[1]);
+for (const method of ["hello", "capabilities", "describe", "act", "events", "health"]) assert.match(protocol, new RegExp(`METHOD_[A-Z]+ := "${method}"`));
+for (const kind of ["scene", "object", "ui", "camera", "material", "animation", "timeline", "artifact", "event"]) assert.match(protocol, new RegExp(`"${kind}"`));
+assert.match(registry, /registrations/);
+assert.match(registry, /is_stable_id/);
+assert.match(registry, /action_not_allowlisted/);
+assert.match(registry, /event:resource-changed/);
+assert.doesNotMatch(registry, /get_tree\(\)\.get_nodes_in_group|get_nodes_in_group|get_children\(\)/);
+assert.match(host, /bearer_token/);
+assert.match(host, /MAXIMUM_MESSAGE_BYTES/);
+assert.match(host, /TCPServer/);
+assert.match(host, /WebSocketPeer/);
+assert.doesNotMatch(host, /get_tree\(\)\.quit|quit\(\)|OS\.kill/);
+assert.match(fixture, /object:fixture/);
+assert.match(fixture, /object\.visible\.set/);
+assert.match(project, /run\/main_scene/);
+assert.match(container, /--headless/);
+assert.match(container, /GODOT_IMAGE/);
+assert.doesNotMatch(container, /JANGOLOVA_PACMAN_TOKEN=.*[A-Za-z0-9]{8}/);
+console.log("Godot Pacman fixture environment contract is valid.");

@@ -33,6 +33,13 @@ docker compose -f tests/docker/compose.yaml run --rm \
   engine-test
 ```
 
+The Chromium fixture also runs the complete reversible Cymonkey augmentation
+lifecycle over CDP. The Firefox fixture runs the same client and augmentation
+document over WebDriver BiDi. Both verify capability metadata, DOM queries,
+overlays, session storage, enable/disable/uninstall, event cursors, and that the
+caller-owned browser remains alive after Cymonkey disconnects. The CDP fixture
+additionally exercises a non-matching owned interception rule.
+
 Run WebDriver Classic against a test-owned WebKitGTK session:
 
 ```bash

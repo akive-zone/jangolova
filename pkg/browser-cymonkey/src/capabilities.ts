@@ -1,0 +1,23 @@
+import { capability } from './types';
+
+export const pageCapabilities = [
+  capability('dom.query', 'Query bounded DOM summaries.', 'read', ['selector'], 'call', 'ephemeral'),
+  capability('overlay.mount', 'Mount a Cymonkey Shadow DOM overlay.', 'write', ['id'], 'document', 'ephemeral'),
+  capability('overlay.patch', 'Replace a Cymonkey overlay content.', 'write', ['id'], 'document', 'ephemeral'),
+  capability('overlay.unmount', 'Remove a Cymonkey overlay.', 'write', ['id'], 'document', 'ephemeral'),
+];
+
+export const privilegedCapabilities = [
+  ...pageCapabilities,
+  capability('script.execute', 'Execute packaged augmentation scripts once.', 'external', ['augmentationId', 'files'], 'call', 'ephemeral'),
+  capability('script.register', 'Register a packaged augmentation content script.', 'external', ['augmentationId', 'script']),
+  capability('script.unregister', 'Unregister an augmentation content script.', 'external', ['augmentationId', 'id']),
+  capability('style.insert', 'Insert CSS in a target tab.', 'write', ['augmentationId', 'css'], 'document', 'ephemeral'),
+  capability('style.remove', 'Remove previously inserted CSS from a target tab.', 'write', ['augmentationId', 'css'], 'document', 'ephemeral'),
+  capability('network.rules.install', 'Install owned declarative network rules.', 'external', ['augmentationId', 'rules']),
+  capability('network.rules.remove', 'Remove owned declarative network rules.', 'external', ['augmentationId', 'ruleIds']),
+  capability('storage.get', 'Read augmentation-scoped extension storage.', 'read', ['augmentationId', 'keys']),
+  capability('storage.set', 'Write augmentation-scoped extension storage.', 'write', ['augmentationId', 'values']),
+];
+
+export const privilegedCapabilityNames = privilegedCapabilities.map((item) => item.name);

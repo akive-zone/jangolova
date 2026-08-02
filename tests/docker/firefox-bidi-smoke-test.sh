@@ -54,6 +54,20 @@ if (connected.status !== "connected" || called.result?.value !== "Jangolova Fixt
 
 curl -fsS -X DELETE -H "Authorization: Bearer ${token}" \
   http://127.0.0.1:7391/v1/instances/firefox-one
+
+curl -fsS \
+  -H "Authorization: Bearer ${token}" \
+  -H "Content-Type: application/json" \
+  -d '{"apiVersion":"interaction.engine/v1alpha1","instanceId":"cymonkey-bidi","engine":{"adapter":"cymonkey","requiredCapabilities":["augmentation.install","dom.query","storage.set"],"options":{"backend":"bidi","extension":{"mode":"disabled"}}},"target":{"kind":"browser","endpoints":[{"name":"bidi","protocol":"webdriver-bidi","url":"ws://127.0.0.1:9223/session"}]}}' \
+  http://127.0.0.1:7391/v1/instances >/tmp/cymonkey-bidi-connect.json
+
+JANGOLOVA_PROVIDER_TOKEN="${token}" node tests/cymonkey-live-client.mjs \
+  --provider http://127.0.0.1:7391 \
+  --instance cymonkey-bidi \
+  --expect-backend bidi
+
+curl -fsS -X DELETE -H "Authorization: Bearer ${token}" \
+  http://127.0.0.1:7391/v1/instances/cymonkey-bidi
 kill -0 "${target_pid}"
 
-echo "Puppeteer WebDriver BiDi smoke test passed against caller-owned Firefox"
+echo "Puppeteer and Cymonkey WebDriver BiDi smoke tests passed against caller-owned Firefox"

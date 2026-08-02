@@ -21,9 +21,11 @@ WORKDIR /usr/local/lib/jangolova
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 COPY scripts/browser-worker.mjs ./browser-worker.mjs
+COPY scripts/cymonkey-worker.mjs ./cymonkey-worker.mjs
 COPY --from=builder /out/jangolova /usr/local/bin/jangolova
 
 ENV JANGOLOVA_BROWSER_WORKER=/usr/local/lib/jangolova/browser-worker.mjs
+ENV JANGOLOVA_CYMONKEY_WORKER=/usr/local/lib/jangolova/cymonkey-worker.mjs
 
 ENTRYPOINT ["jangolova"]
 CMD ["serve-engine-provider"]

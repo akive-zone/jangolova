@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"jangolova/adapters/browserautomation"
+	"jangolova/adapters/cymonkey"
 	"jangolova/adapters/pacman"
 	"jangolova/adapters/safarimcp"
 	"jangolova/adapters/webdriverclassic"
@@ -20,6 +21,9 @@ func EngineRegistry() (*orchestrator.Registry, error) {
 	}
 	if err := registry.RegisterEngine("puppeteer", browserautomation.Puppeteer()); err != nil {
 		return nil, fmt.Errorf("register Puppeteer interaction engine: %w", err)
+	}
+	if err := registry.RegisterEngine("cymonkey", cymonkey.Adapter{}); err != nil {
+		return nil, fmt.Errorf("register Cymonkey augmented-browsing engine: %w", err)
 	}
 	if err := registry.RegisterEngine("webdriver-classic", webdriverclassic.Generic()); err != nil {
 		return nil, fmt.Errorf("register WebDriver Classic interaction engine: %w", err)

@@ -23,6 +23,9 @@ same target endpoints and handles without Xallet.
 
 - Playwright attachment to a caller-owned Chromium-compatible CDP target.
 - Puppeteer attachment over CDP or WebDriver BiDi, including Firefox.
+- Cymonkey transport-neutral augmented browsing over CDP, WebDriver BiDi, or a
+  negotiated Safari MCP subset, with an optional Jangolova Browser Extension for
+  persistent scripts, storage, and declarative network rules.
 - WebDriver Classic attachment to an existing caller-owned session, including
   Safari's `safaridriver`.
 - Named WebKit WebDriver attachment for WebKitGTK, WPE WebKit, and Safari.
@@ -51,6 +54,28 @@ jangolova connect-engine \
   --adapter playwright \
   --target-kind browser \
   --endpoint cdp=http://127.0.0.1:9222
+```
+
+Cymonkey needs no extension for its CDP or WebDriver BiDi baseline. To add the
+optional persistent Jangolova Browser Extension backend, build it with WXT and have
+the target owner install the unpacked extension from
+`pkg/browser-jangolova/.output/<browser>-mv3` (legacy: `pkg/browser-cymonkey/...`):
+
+```bash
+npm install --prefix pkg/browser-jangolova
+npm --prefix pkg/browser-jangolova run check
+```
+
+For Xallet spoke variants, run `npm --prefix pkg/browser-jangolova run build:spoke` and
+load the matching `<browser>-mv3-spoke` directory. Spoke builds still work standalone
+when Xallet Hub is absent.
+
+```bash
+jangolova connect-engine \
+  --adapter cymonkey \
+  --target-kind browser \
+  --endpoint cdp=http://127.0.0.1:9222 \
+  --options '{"backend":"auto","extension":{"mode":"auto","id":"optional-installed-extension-id"}}'
 ```
 
 `connect-engine` disconnects Jangolova when interrupted; it does not terminate
@@ -94,6 +119,7 @@ targets solely to verify attachment portability.
 See [Architecture](docs/architecture.md), [Interaction provider](docs/engine-provider.md),
 [Deployment modes](docs/deployment-modes.md), [Bridge protocol](docs/bridge-protocol.md),
 [Grimlock agent subsystem](docs/grimlock.md),
+[Cymonkey augmented browsing](docs/cymonkey.md),
 [Pacman](docs/pacman.md),
 [interface creation and operation](docs/interface-model.md),
 [caller-supplied targets](docs/target-descriptor.md),
@@ -105,9 +131,11 @@ See [Architecture](docs/architecture.md), [Interaction provider](docs/engine-pro
 ```bash
 go test ./...
 npm run test:browser-worker
+npm run test:cymonkey
 npm run test:unity-package
 npm run test:unity-pacman-package
 npm run test:unreal-pacman-package
+npm run test:unreal-pacman-fixture
 ```
 
 The optional container fixture is documented in

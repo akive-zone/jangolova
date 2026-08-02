@@ -22,6 +22,21 @@ func TestRegistryIncludesProviderVisiblePacman(t *testing.T) {
 	}
 }
 
+func TestRegistryIncludesProviderVisibleCymonkey(t *testing.T) {
+	registry, err := EngineRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, ok := registry.Engine("cymonkey")
+	if !ok {
+		t.Fatal("Cymonkey adapter is not registered")
+	}
+	inspection := adapter.(orchestrator.EngineInspector).InspectEngine(context.Background())
+	if !hasCapability(inspection.Capabilities, "script.register") {
+		t.Fatalf("Cymonkey inspection = %#v", inspection)
+	}
+}
+
 func hasCapability(values []string, expected string) bool {
 	for _, value := range values {
 		if value == expected {

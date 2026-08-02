@@ -49,6 +49,29 @@
 - [ ] Add a Safari 27/STP live fixture when that runtime is available in CI.
 - [ ] Add richer page observation and accessibility descriptions.
 
+## Phase 2b: Augmented browsing
+
+- [x] Define the Cymonkey page-safe and privileged-extension trust boundary.
+- [x] Add the nested `window.jangolova.cymonkey` page bridge.
+- [x] Define `jangolova.cymonkey/v1alpha1`, the augmentation schema, backend
+  interface, auto-selection policy, and capability persistence metadata.
+- [x] Add no-install CDP and first-class WebDriver BiDi mappings for the same
+  augmentation contract.
+- [x] Run the same reversible augmentation lifecycle against test-owned
+  Chromium CDP and Firefox WebDriver BiDi targets while proving target-preserving disconnect.
+- [x] Add dynamic Safari MCP mapping that advertises only explicitly supported
+  script, preload, DOM, and network semantics.
+- [x] Add packaged script registration/execution, CSS injection, extension
+  storage, Shadow DOM overlays, and declarative network rules.
+- [x] Detect an optional caller-installed Chromium extension through a
+  caller-owned CDP target without launching or stopping the browser.
+- [x] Add WXT Manifest V3 packaging for Chrome, Edge, and Firefox, including
+  standalone and Xallet spoke modes.
+- [ ] Add live cross-browser extension fixtures.
+- [x] Add provider-level capability and origin filtering.
+- [ ] Add signed augmentation bundles and an extension-initiated authenticated
+  WebSocket control option.
+
 ## Phase 3: Presentation engines
 
 - [x] Keep the Three.js dynamic-scene experience and protocol.
@@ -63,7 +86,9 @@
 - [x] Verify artifact mounting in a direct-container target without Xallet.
 - [x] Add authorization, audit, timeout, and cancellation hooks for authored
   JavaScript execution.
-- [x] Define the Pacman Unity/Unreal semantic protocol and lifecycle boundary.
+- [x] Define the Pacman Godot/Unity/Unreal semantic protocol and lifecycle boundary.
+- [x] Add Godot as the license-free Pacman reference runtime.
+- [x] Add a headless Godot 4 fixture and authenticated `pacman-ws` container.
 - [x] Expose authenticated caller-owned `pacman-ws` attachment through the
   interaction provider.
 - [x] Add a minimal Unity Pacman package with explicit resource/action

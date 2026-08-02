@@ -1,8 +1,8 @@
 # Pacman semantic presentation bridge
 
-Pacman is Jangolova's embedded semantic control plane for Unity and Unreal.
+Pacman is Jangolova's embedded semantic control plane for Godot, Unity, and Unreal.
 It is not a renderer, game runtime, display server, streamer, launcher, or
-target supervisor. Unity and Unreal render their own applications. Xallet or
+target supervisor. Godot, Unity, and Unreal render their own applications. Xallet or
 another caller owns placement, GPU, display/pixel transport, credentials,
 network reachability, and application lifecycle.
 
@@ -109,6 +109,10 @@ the replacement connection.
 
 ## Implementations
 
+`pkg/godot-pacman` is the license-free reference implementation. It provides a
+headless Godot 4 package with explicit Node registrations, authenticated
+`pacman-ws`, and the shared six-method contract.
+
 `pkg/unity-pacman` is the distributable Unity implementation. It uses serialized
 registrations for allowlisting and dispatches semantic work on Unity's main
 thread. `PacmanWebSocketHost` is one replaceable
@@ -128,6 +132,10 @@ through the normal provider target descriptor today; it does not need a
 separate Unity-specific Jangolova adapter. The remaining Unity work is transport
 hardening and live platform coverage. The remaining Unreal work is the
 platform-specific listener/upgrade binding and live packaged-game fixture.
+
+The Godot fixture is at `tests/godot-pacman-fixture`; its headless container is
+at `deploy/godot-pacman-fixture`. Godot is the license-free reference runtime,
+while Unity and Unreal remain engine-specific integrations.
 
 The source-only Unreal fixture is at
 `tests/unreal-pacman-fixture`. Its optional packaged-runtime image definition
