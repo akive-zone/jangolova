@@ -127,7 +127,7 @@ adapters/browserautomation/ Playwright CDP and Puppeteer CDP/BiDi attachment
 adapters/cymonkey/          transport-neutral augmented browsing and backend policy
 adapters/webdriverclassic/  existing W3C WebDriver session attachment
 adapters/safarimcp/         caller-owned Safari MCP relay attachment
-pkg/browser-ext/      canonical WXT runtime and Xallet spoke
+pkg/browser-ext/           single-build WXT runtime with optional Xallet Spook activation
 pkg/threejs-pacman/         explicit-registration Three.js Pacman runtime
 pkg/                        distributable Godot, Unity, and Unreal Pacman packages
 tests/godot-pacman-fixture/ license-free Godot conformance project

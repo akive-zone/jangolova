@@ -11,13 +11,15 @@ Jangolova owns extension authentication, policy, packaged script injection,
 namespaced storage, declarative network rules, and the shared cursor event log.
 Neither subsystem exposes raw `chrome.*` or `browser.*` APIs to the page.
 
-Build standalone or Xallet spoke variants with:
+Build the single artifact for each browser with:
 
 ```sh
 npm install
 npm run check
 ```
 
-The page-safe `window.jangolova.cymonkey` API remains compatible. Privileged
-calls use `JANGOLOVA_EXTENSION_CALL`; `CYMONKEY_CALL` is accepted only as a
-legacy Xallet-spoke alias from the authenticated hub extension.
+The page-safe `window.jangolova.cymonkey` API remains compatible. Every build
+works standalone and also carries Xallet Spook support. When an enabled
+`Xallet Hub` is discovered, the extension registers with it and accepts
+privileged external calls only from that discovered hub ID. No separate Spook
+artifact or installation exists.

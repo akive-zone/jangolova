@@ -74,17 +74,15 @@ test("CDP interception rules are augmentation-owned and cleaned up before discon
   assert.match(worker, /protocol === "cdp"/);
 });
 
-test("WXT package defines standalone and Xallet spoke build matrices", async () => {
+test("WXT package builds once per browser with embedded Xallet Spook support", async () => {
   const pkg = JSON.parse(await source(browserExtensionPackage));
   const config = await source(browserExtensionConfig);
   assert.equal(pkg.name, "@jangolova/browser-extension");
-  assert.match(pkg.scripts["build:standalone"], /chrome.*edge.*firefox/);
-  assert.match(pkg.scripts["build:spoke"], /chrome.*edge.*firefox/);
-  assert.match(pkg.scripts["build:spoke:chrome"], /--mode spoke/);
-  assert.match(config, /mode === 'spoke'/);
-  assert.match(config, /outDirTemplate: '\{\{browser\}\}-mv\{\{manifestVersion\}\}\{\{modeSuffix\}\}'/);
-  assert.match(config, /\.\.\.\(spoke \? \['management'\] : \[\]\)/);
-  assert.match(config, /externally_connectable: spoke/);
+  assert.match(pkg.scripts.build, /chrome.*edge.*firefox/);
+  assert.doesNotMatch(JSON.stringify(pkg.scripts), /mode spoke|build:spoke|dev:spoke/);
+  assert.match(config, /outDirTemplate: '\{\{browser\}\}-mv\{\{manifestVersion\}\}'/);
+  assert.match(config, /'management'/);
+  assert.match(config, /externally_connectable: \{ ids: \['\*'\] \}/);
   assert.match(config, /data_collection_permissions/);
 });
 
@@ -112,14 +110,15 @@ test("Cymonkey separates its page-safe and privileged extension planes", async (
   assert.doesNotMatch(background, /browser\.api|chrome\.evaluate/);
 });
 
-test("Xallet spoke registration is optional and authenticated by discovered hub ID", async () => {
-  const spoke = await source("pkg/browser-ext/src/xallet-spoke.ts");
+test("Xallet Spook registration activates at runtime and authenticates the discovered hub ID", async () => {
+  const spook = await source("pkg/browser-ext/src/xallet-spook.ts");
   const background = await source("pkg/browser-ext/entrypoints/background.ts");
   const policy = await source("pkg/browser-ext/src/services/policy.ts");
-  assert.match(spoke, /extension\.name === hubName && extension\.enabled/);
-  assert.match(spoke, /REGISTER_SPOKE/);
-  assert.match(spoke, /UPDATE_SPOKE_STATE/);
-  assert.match(spoke, /senderId === this\.hubId/);
-  assert.match(background, /import\.meta\.env\.MODE === 'spoke'/);
+  assert.match(spook, /extension\.name === hubName && extension\.enabled/);
+  assert.match(spook, /REGISTER_SPOKE/);
+  assert.match(spook, /UPDATE_SPOKE_STATE/);
+  assert.match(spook, /senderId === this\.hubId/);
+  assert.match(background, /new XalletSpookClient/);
+  assert.doesNotMatch(background, /import\.meta\.env\.MODE/);
   assert.match(policy, /JANGOLOVA_EXTENSION_CALL/);
 });

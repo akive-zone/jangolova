@@ -37,7 +37,7 @@ async function describe() {
   return {
     product: 'Jangolova Browser Extension',
     extensionId: browser.runtime.id,
-    mode: import.meta.env.MODE === 'spoke' ? 'spoke' : 'standalone',
+    distribution: 'single-build',
     subsystems: { cymonkey: true, pacman: true },
   };
 }

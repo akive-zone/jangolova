@@ -66,9 +66,9 @@ npm install --prefix pkg/browser-ext
 npm run build:browser-extension
 ```
 
-For the Xallet spoke variants, run `npm run build:browser-extension:spoke` and load the
-matching `<browser>-mv3-spoke` directory. Spoke builds still work standalone
-when Xallet Hub is absent.
+Every browser artifact contains the Xallet Spook integration. It operates as an
+ordinary standalone Jangolova extension when Xallet Hub is absent and activates
+the Spook registration/control flow automatically when the hub is detected.
 
 ```bash
 jangolova connect-engine \

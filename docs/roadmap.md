@@ -66,7 +66,7 @@
 - [x] Detect an optional caller-installed Chromium extension through a
   caller-owned CDP target without launching or stopping the browser.
 - [x] Add WXT Manifest V3 packaging for Chrome, Edge, and Firefox, including
-  standalone and Xallet spoke modes.
+  one standalone artifact with runtime-activated Xallet Spook integration.
 - [ ] Add live cross-browser extension fixtures.
 - [x] Add provider-level capability and origin filtering.
 - [ ] Add signed augmentation bundles and an extension-initiated authenticated

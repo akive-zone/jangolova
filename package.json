@@ -7,8 +7,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "build:browser-extension": "npm --prefix pkg/browser-ext run build:standalone",
-    "build:browser-extension:spoke": "npm --prefix pkg/browser-ext run build:spoke",
+    "build:browser-extension": "npm --prefix pkg/browser-ext run build",
     "compile:browser-extension": "npm --prefix pkg/browser-ext run compile",
     "compile:threejs-pacman": "pkg/browser-ext/node_modules/.bin/tsc -p pkg/threejs-pacman/tsconfig.json --noEmit",
     "test:browser-worker": "node --test tests/browser-worker-contract-test.mjs",

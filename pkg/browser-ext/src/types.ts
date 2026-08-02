@@ -38,9 +38,9 @@ export type ActionRequest = {
   input?: Record<string, unknown>;
 };
 
-export type XalletSpokeState = {
+export type XalletSpookState = {
   status: 'ready' | 'running' | 'failed';
-  mode: 'standalone' | 'spoke';
+  xalletSpook: 'discovering' | 'unavailable' | 'connected';
   browser: string;
   capabilities: string[];
   lastAction?: string;

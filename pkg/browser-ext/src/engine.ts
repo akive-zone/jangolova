@@ -29,7 +29,7 @@ function hello() {
     backends: ['webextension'],
     features: [
       'augmentation', 'jangolova.platform-services', 'events.cursor', 'scripts.packaged',
-      import.meta.env.MODE === 'spoke' ? 'xallet.spoke' : 'standalone',
+      'standalone', 'xallet.spook.runtime-discovery',
     ],
   };
 }
@@ -44,7 +44,7 @@ async function describe() {
       id: browser.runtime.id,
       product: 'Jangolova Browser Extension',
       version: browser.runtime.getManifest().version,
-      mode: import.meta.env.MODE === 'spoke' ? 'spoke' : 'standalone',
+      distribution: 'single-build',
       browser: import.meta.env.BROWSER,
     },
     activeTab: tab ? { id: tab.id, url: tab.url || null, title: tab.title || null } : null,

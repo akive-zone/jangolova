@@ -232,9 +232,10 @@ The extension consists of:
 - a main-world bootstrap that creates `window.jangolova.cymonkey`;
 - an extension-origin control entry point for the backend handshake.
 
-The Xallet spoke build additionally registers with the provider-installed
-`Xallet Hub`; it accepts external privileged calls only from the discovered,
-enabled hub ID. It still operates standalone when the hub is absent.
+The single extension build always carries Xallet Spook integration. It detects
+the provider-installed `Xallet Hub` at runtime, registers when found, and
+accepts external privileged calls only from that discovered, enabled hub ID.
+When the hub is absent, the same artifact continues to operate standalone.
 
 ## Policy requirements
 
@@ -261,9 +262,9 @@ npm install --prefix pkg/browser-ext
 npm --prefix pkg/browser-ext run check
 ```
 
-Standalone outputs are `.output/chrome-mv3`, `.output/edge-mv3`, and
-`.output/firefox-mv3`. Xallet spoke outputs append `-spoke`. The target owner
-loads the appropriate directory; Jangolova does not install it.
+Outputs are `.output/chrome-mv3`, `.output/edge-mv3`, and
+`.output/firefox-mv3`. There is no separate normal or Spook build. The target
+owner loads the appropriate browser directory; Jangolova does not install it.
 
 ## Connection examples
 

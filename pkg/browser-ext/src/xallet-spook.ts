@@ -1,15 +1,16 @@
-import type { XalletSpokeState } from './types';
+import type { XalletSpookState } from './types';
 
 const hubName = 'Xallet Hub';
 
-export class XalletSpokeClient {
+export class XalletSpookClient {
   private hubId: string | null = null;
   private timer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     private readonly name: string,
-    private state: XalletSpokeState,
+    private state: XalletSpookState,
     private readonly uiPath: string,
+    private readonly onStatus: (status: XalletSpookState['xalletSpook']) => void = () => undefined,
   ) {}
 
   start() {
@@ -26,7 +27,7 @@ export class XalletSpokeClient {
     return Boolean(senderId && this.hubId && senderId === this.hubId);
   }
 
-  async updateState(state: XalletSpokeState) {
+  async updateState(state: XalletSpookState) {
     this.state = state;
     if (!this.hubId) return;
     try {
@@ -36,6 +37,7 @@ export class XalletSpokeClient {
       });
     } catch {
       this.hubId = null;
+      this.setStatus('unavailable');
     }
   }
 
@@ -45,10 +47,12 @@ export class XalletSpokeClient {
       const hub = extensions.find((extension) => extension.name === hubName && extension.enabled);
       if (!hub?.id) {
         this.hubId = null;
+        this.setStatus('unavailable');
         return;
       }
       if (hub.id === this.hubId) return;
       this.hubId = hub.id;
+      this.setStatus('connected');
       await browser.runtime.sendMessage(hub.id, {
         type: 'REGISTER_SPOKE',
         payload: {
@@ -59,6 +63,12 @@ export class XalletSpokeClient {
       });
     } catch {
       this.hubId = null;
+      this.setStatus('unavailable');
     }
+  }
+
+  private setStatus(status: XalletSpookState['xalletSpook']) {
+    this.state = { ...this.state, xalletSpook: status };
+    this.onStatus(status);
   }
 }

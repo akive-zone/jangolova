@@ -3,21 +3,24 @@ import { dispatchCymonkey } from '../src/engine';
 import { dispatchJangolova } from '../src/runtime';
 import { publishCymonkeyEvent } from '../src/services/events';
 import { isExtensionControlCall } from '../src/services/policy';
-import { errorMessage, isRecord, type XalletSpokeState } from '../src/types';
-import { XalletSpokeClient } from '../src/xallet-spoke';
+import { errorMessage, isRecord, type XalletSpookState } from '../src/types';
+import { XalletSpookClient } from '../src/xallet-spook';
 
 export default defineBackground(() => {
-  let state: XalletSpokeState = {
+  let state: XalletSpookState = {
     status: 'ready',
-    mode: import.meta.env.MODE === 'spoke' ? 'spoke' : 'standalone',
+    xalletSpook: 'discovering',
     browser: import.meta.env.BROWSER,
     capabilities: privilegedCapabilityNames,
     extensionId: browser.runtime.id,
   };
-  const spoke = import.meta.env.MODE === 'spoke'
-    ? new XalletSpokeClient('Jangolova Browser Extension', state, 'popup.html')
-    : null;
-  spoke?.start();
+  const spook = new XalletSpookClient(
+    'Jangolova Browser Extension',
+    state,
+    'popup.html',
+    (xalletSpook) => { state = { ...state, xalletSpook }; },
+  );
+  spook.start();
 
   browser.runtime.onMessage.addListener((message, sender) => {
     return handleMessage(message, sender.tab?.id);
@@ -25,7 +28,7 @@ export default defineBackground(() => {
 
   browser.runtime.onMessageExternal?.addListener((message, sender) => {
     if (!isExtensionControlCall(message)) return undefined;
-    if (!spoke?.acceptsExternalSender(sender.id)) {
+    if (!spook.acceptsExternalSender(sender.id)) {
       return Promise.resolve({ ok: false, error: 'external caller is not the registered Xallet Hub' });
     }
     return handleControlCall(message);
@@ -56,17 +59,17 @@ export default defineBackground(() => {
     const method = String(message.method || '');
     const params = isRecord(message.params) ? message.params : {};
     state = { ...state, status: 'running', lastAction: method, lastError: undefined };
-    await spoke?.updateState(state);
+    await spook.updateState(state);
     try {
       const result = message.type === 'CYMONKEY_CALL'
         ? await dispatchCymonkey(method, params)
         : await dispatchJangolova(method, params);
       state = { ...state, status: 'ready', lastAction: method, lastError: undefined };
-      await spoke?.updateState(state);
+      await spook.updateState(state);
       return { ok: true, result };
     } catch (error) {
       state = { ...state, status: 'failed', lastAction: method, lastError: errorMessage(error) };
-      await spoke?.updateState(state);
+      await spook.updateState(state);
       return { ok: false, error: state.lastError };
     }
   }

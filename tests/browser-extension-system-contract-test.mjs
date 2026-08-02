@@ -9,7 +9,8 @@ test("browser-ext is the canonical WXT product", async () => {
   const pkg = JSON.parse(await source("pkg/browser-ext/package.json"));
   const config = await source("pkg/browser-ext/wxt.config.ts");
   assert.equal(pkg.name, "@jangolova/browser-extension");
-  assert.match(pkg.scripts["build:standalone"], /chrome.*edge.*firefox/);
+  assert.match(pkg.scripts.build, /chrome.*edge.*firefox/);
+  assert.doesNotMatch(JSON.stringify(pkg.scripts), /build:spoke|mode spoke/);
   assert.match(config, /Jangolova Browser Extension/);
   assert.match(config, /browser-jangolova@jangolova\.dev/);
 });
