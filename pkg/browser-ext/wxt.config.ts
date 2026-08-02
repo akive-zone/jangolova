@@ -5,10 +5,10 @@ export default defineConfig({
   manifest: ({ mode }) => {
     const spoke = mode === 'spoke';
     return {
-          name: spoke ? 'Xallet Spoke: Jangolova Browser Extension' : 'Jangolova Browser Extension',
-          description: spoke
-        ? 'Jangolova Browser Extension for Xallet Hub and standalone operation'
-        : 'Jangolova Browser Extension with packaged scripts, overlays, storage, and request rules',
+      name: spoke ? 'Xallet Spoke: Jangolova Browser Extension' : 'Jangolova Browser Extension',
+      description: spoke
+        ? 'Jangolova browser runtime for Xallet Hub and standalone operation'
+        : 'Jangolova browser runtime with Cymonkey augmentation and Pacman presentation control',
       permissions: [
         'declarativeNetRequest',
         'declarativeNetRequestWithHostAccess',

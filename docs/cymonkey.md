@@ -1,14 +1,10 @@
-# Cymonkey augmented browsing subsystem
+# Cymonkey augmented browsing
 
-Cymonkey is Jangolova’s transport-neutral augmented-browsing subsystem. Jangolova
-owns backend discovery/selection, authentication, storage/network/event services,
-and control-plane routing. Cymonkey contributes the augmentation and page-level
-semantics, then consumes those platform services.
-
-It is a semantic contract over a caller-owned browser, not an owner of browser
-processes, profiles, credentials, or lifecycle. CDP, WebDriver BiDi, Safari MCP,
-and an optional Jangolova Browser Extension backend can implement the same
-contract.
+Cymonkey is Jangolova's augmented-browsing subsystem. It contributes
+augmentation lifecycle plus DOM, style, and overlay semantics. Jangolova owns
+backend selection, authentication, injection, storage, network rules, and the
+shared event service used to implement those semantics across CDP, WebDriver
+BiDi, Safari MCP, and the optional Jangolova Browser Extension.
 
 The protocol version is `jangolova.cymonkey/v1alpha1`. Its five operations are
 also exposed to cooperating page code as:
@@ -24,18 +20,9 @@ window.jangolova.cymonkey = {
 ```
 
 The page global is deliberately less capable than the engine control plane. It
-contains page-safe DOM, overlay, description, and event operations only. It never
-exposes raw `chrome.*`, raw `browser.*`, arbitrary protocol commands, extension
-storage, request interception, or privileged Passthrough.
-
-## Ownership model at a glance
-
-- **Jangolova owns** browser backend discovery and selection, authenticated control
-  plane, storage/naming/network/event service infrastructure, browser permissions
-  strategy, and lifecycle.
-- **Cymonkey owns** augmentation lifecycle, DOM/script/overlay/style operations,
-  and page-safe semantic descriptions/events.
-- **Caller owns** browser process/profile/install state/process lifecycle.
+contains page-safe DOM, overlay, description, and event operations only. It
+never exposes raw `chrome.*`, raw `browser.*`, arbitrary protocol commands,
+extension storage, request interception, or another privileged passthrough.
 
 ## Ownership and lifecycle
 
@@ -59,7 +46,7 @@ application or agent
         | jangolova.cymonkey/v1alpha1
         | hello / capabilities / describe / act / events
         v
-Go Cymonkey adapter
+Jangolova browser runtime
         |
         +-- selection policy: auto | cdp | bidi | safari-mcp
         +-- capability/origin policy
@@ -68,7 +55,7 @@ Go Cymonkey adapter
         +-- CDP backend ---------------- Runtime / Page / DOM / CSS / Network / Fetch
         +-- BiDi backend --------------- script / browsingContext / network
         +-- Safari MCP mapper ---------- dynamically discovered safe tool mappings
-        +-- optional WebExtension ------ scripting / storage / DNR / persistent state
+        +-- optional Jangolova Extension - platform services and persistent state
                                                     |
                                                     +-- isolated content script
                                                     +-- page bootstrap bridge
@@ -150,7 +137,7 @@ authorization.
 
 ## Semantic capability set
 
-The `v1alpha1` vocabulary includes:
+The `v1alpha1` Cymonkey vocabulary includes:
 
 - `augmentation.install`, `augmentation.update`, `augmentation.uninstall`
 - `augmentation.enable`, `augmentation.disable`, `augmentation.list`,
@@ -159,8 +146,12 @@ The `v1alpha1` vocabulary includes:
 - `style.insert`, `style.remove`
 - `dom.query`, `dom.observe`, `dom.patch`
 - `overlay.mount`, `overlay.patch`, `overlay.unmount`
-- `network.observe`, `network.rules.install`, `network.rules.remove`
-- `storage.get`, `storage.set`
+- compatibility routes for `network.*` and `storage.*` while callers migrate
+  to the Jangolova extension control protocol
+
+Network rules, storage, shared events, and packaged script injection are
+implemented and authorized by Jangolova platform services. Their appearance in
+the Cymonkey compatibility vocabulary does not assign ownership to Cymonkey.
 
 A backend advertises only operations it actually supports after runtime
 probing. For example, a Safari MCP endpoint with click, type, and screenshot
@@ -177,7 +168,7 @@ tools does not thereby advertise augmentation support.
 | styles | CSS/Runtime domains | script mapping when supported | mapped style/evaluate tool | `scripting.insertCSS/removeCSS` |
 | network observe | Network events | network events | discovered network observation tool | browser events when permitted |
 | network rules | Fetch interception, session lifetime | `network.addIntercept/removeIntercept` and actions | only explicit intercept tools | declarativeNetRequest, persistent |
-| storage | page/origin storage, limited lifetime | page/origin storage when script is supported | only explicit storage tools | extension-scoped persistent storage |
+| storage | Jangolova mapping to page/origin storage | Jangolova mapping when script is supported | only explicit discovered tools | Jangolova scoped extension storage |
 
 CDP and BiDi implementations must probe actual browser support. A protocol
 method appearing in a specification is not sufficient reason to advertise it.
@@ -245,21 +236,6 @@ The Xallet spoke build additionally registers with the provider-installed
 `Xallet Hub`; it accepts external privileged calls only from the discovered,
 enabled hub ID. It still operates standalone when the hub is absent.
 
-Jangolova controls extension ownership and backend identity separately from page-safe
-operations. Pacman can be used by augmentations for 3D presentation control, but
-Pacman receives only explicitly registered semantic resources and action allowlists.
-Cymonkey never maps or drives arbitrary scene objects directly.
-
-## Migration to the Jangolova Browser Extension package
-
-`pkg/browser-cymonkey` remains supported as the legacy path. A compatibility
-bridge package is provided at `pkg/browser-jangolova` with the same source and an
-explicit migration note for external operators:
-
-- New references should use `pkg/browser-jangolova`.
-- Existing scripts that import `pkg/browser-cymonkey` continue to work unchanged.
-- Extension control channels and protocol names remain stable (`jangolova.cymonkey/*`).
-
 ## Policy requirements
 
 1. Filter capabilities before advertising them and again before dispatch.
@@ -277,17 +253,17 @@ explicit migration note for external operators:
 
 ## Browser extension package
 
-The optional backend source currently lives in `pkg/browser-cymonkey` and
-`pkg/browser-jangolova` (compatibility bridge), and uses WXT. Build it with:
+The optional Jangolova Browser Extension lives in `pkg/browser-ext` and uses WXT. Build it
+with:
 
 ```sh
-npm install --prefix pkg/browser-jangolova
-npm --prefix pkg/browser-jangolova run check
+npm install --prefix pkg/browser-ext
+npm --prefix pkg/browser-ext run check
 ```
 
-If you are continuing an existing integration, `pkg/browser-cymonkey` remains
-supported and runs the same build outputs. A migration path can use the same
-generated artifacts.
+Standalone outputs are `.output/chrome-mv3`, `.output/edge-mv3`, and
+`.output/firefox-mv3`. Xallet spoke outputs append `-spoke`. The target owner
+loads the appropriate directory; Jangolova does not install it.
 
 ## Connection examples
 

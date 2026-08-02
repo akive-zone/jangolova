@@ -69,7 +69,7 @@ func TestRepositoryOwnsEngineCodeOnly(t *testing.T) {
 		}
 		name := strings.ToLower(entry.Name())
 		if (name == "dockerfile" || name == "containerfile" || strings.Contains(name, "compose")) &&
-			relative != "deploy/engine-runtime/Containerfile" {
+			!allowedDeploymentFixture(relative) {
 			t.Errorf("deployment topology must live under tests or Xallet: %s", relative)
 		}
 		if relative == "deploy/engine-runtime/Containerfile" {
@@ -87,6 +87,18 @@ func TestRepositoryOwnsEngineCodeOnly(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatalf("scan deployment files: %v", err)
+	}
+}
+
+func allowedDeploymentFixture(relative string) bool {
+	switch relative {
+	case "deploy/engine-runtime/Containerfile",
+		"deploy/godot-pacman-fixture/Containerfile",
+		"deploy/unity-pacman-fixture/Containerfile",
+		"deploy/unreal-pacman-fixture/Containerfile":
+		return true
+	default:
+		return false
 	}
 }
 

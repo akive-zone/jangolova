@@ -109,6 +109,11 @@ the replacement connection.
 
 ## Implementations
 
+`pkg/threejs-pacman` is the browser implementation for explicitly registered
+Three.js resources. The Jangolova Browser Extension carries its calls through a
+private MAIN-world invocation; it never adds Pacman control to the public page
+global and never scans a site's JavaScript or scene graph.
+
 `pkg/godot-pacman` is the license-free reference implementation. It provides a
 headless Godot 4 package with explicit Node registrations, authenticated
 `pacman-ws`, and the shared six-method contract.

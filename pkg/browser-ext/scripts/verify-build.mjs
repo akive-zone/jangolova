@@ -13,7 +13,7 @@ async function verify(directory, spoke) {
   const output = new URL(`${directory}/`, root);
   const manifest = JSON.parse(await readFile(new URL('manifest.json', output), 'utf8'));
   assert.equal(manifest.manifest_version, 3, `${directory}: expected MV3`);
-  assert.equal(manifest.name, spoke ? 'Xallet Spoke: Cymonkey' : 'Jangolova Cymonkey');
+  assert.equal(manifest.name, spoke ? 'Xallet Spoke: Jangolova Browser Extension' : 'Jangolova Browser Extension');
   assert.equal(manifest.permissions.includes('management'), spoke, `${directory}: management permission mode mismatch`);
   assert.equal(Boolean(manifest.externally_connectable), spoke, `${directory}: external connection mode mismatch`);
   assert.ok(manifest.permissions.includes('scripting'));

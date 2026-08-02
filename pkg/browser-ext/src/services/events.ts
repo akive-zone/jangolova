@@ -1,7 +1,7 @@
-import type { CymonkeyEvent, EventQuery } from './types';
+import type { CymonkeyEvent, EventQuery } from '../types';
 
-const sequenceKey = 'cymonkey.eventSequence';
-const eventsKey = 'cymonkey.events';
+const sequenceKey = 'jangolova.eventSequence';
+const eventsKey = 'jangolova.events';
 let eventChain = Promise.resolve<unknown>(undefined);
 
 function eventStorage() {
@@ -35,6 +35,12 @@ export function appendEvent(
   eventChain = result;
   return result;
 }
+
+export const publishCymonkeyEvent = (type: string, data: Record<string, unknown> = {}, tabId?: number) =>
+  appendEvent(`cymonkey.${type}`, data, tabId);
+
+export const publishPacmanEvent = (type: string, data: Record<string, unknown> = {}, tabId?: number) =>
+  appendEvent(`pacman.${type}`, data, tabId);
 
 export async function readEvents(query: EventQuery = {}) {
   const cursor = Number.parseInt(query.after || '0', 10);

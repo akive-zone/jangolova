@@ -155,7 +155,10 @@ async function probeExtension() {
     extensionControl = result.page;
     extensionControlCreated = result.created;
     const extensionHello = await callExtension("hello", {});
-    if (extensionHello?.protocolVersion !== protocolVersion || !isCompatibleExtensionImplementation(extensionHello?.implementation?.name)) {
+    if (extensionHello?.protocolVersion !== protocolVersion || ![
+      "jangolova-browser-extension-webextension",
+      "jangolova-cymonkey-webextension",
+    ].includes(extensionHello?.implementation?.name)) {
       throw new Error("extension returned an incompatible Cymonkey handshake");
     }
   } catch (error) {
@@ -652,10 +655,6 @@ function pageBridgeBootstrap(backend = "cdp") {
     act,
     events: async (query = {}) => ({ events: pageEvents.filter((event) => Number(event.id) > Number(query.after || 0)), cursor: String(cursor) }),
   });
-}
-
-function isCompatibleExtensionImplementation(value) {
-  return value === "jangolova-browser-extension-webextension" || value === "jangolova-cymonkey-webextension";
 }
 
 function scriptBootstrap(source, matches, excludeMatches) {

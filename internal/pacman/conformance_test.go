@@ -24,6 +24,16 @@ func TestConformanceAcceptsExplicitAllowlist(t *testing.T) {
 	}
 }
 
+func TestConformanceAcceptsSupportedBrowserAndNativeEngines(t *testing.T) {
+	for _, engine := range []string{"godot", "unity", "unreal", "threejs"} {
+		caller := validFixture()
+		caller[MethodHello] = json.RawMessage(`{"protocolVersion":"jangolova.pacman/v1alpha1","implementation":{"engine":"` + engine + `","name":"fixture"}}`)
+		if _, err := ValidateConformance(context.Background(), caller); err != nil {
+			t.Fatalf("engine %s: %v", engine, err)
+		}
+	}
+}
+
 func TestConformanceRejectsUnstableOrMismatchedIDs(t *testing.T) {
 	for _, description := range []string{
 		`{"revision":"1","resources":[{"id":"Hero (Clone)","kind":"object"}]}`,

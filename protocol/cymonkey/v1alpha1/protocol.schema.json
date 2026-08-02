@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://jangolova.dev/protocol/cymonkey/v1alpha1/protocol.schema.json",
-  "title": "Jangolova Browser Extension protocol (Cymonkey subsystem)",
+  "title": "Jangolova Browser Extension Cymonkey subsystem protocol",
   "oneOf": [
     {"$ref": "#/$defs/hello"},
     {"$ref": "#/$defs/capability"},

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jangolova.dev/protocol/browser-extension/v1alpha1/protocol.schema.json",
+  "title": "Jangolova Browser Extension control protocol",
+  "description": "Authenticated private control-plane envelope for Jangolova platform services and semantic subsystems.",
+  "type": "object",
+  "required": ["type", "method"],
+  "properties": {
+    "type": {"const": "JANGOLOVA_EXTENSION_CALL"},
+    "method": {"enum": ["hello", "capabilities", "describe", "events", "cymonkey.call", "pacman.call"]},
+    "params": {"type": "object"}
+  },
+  "additionalProperties": false
+}

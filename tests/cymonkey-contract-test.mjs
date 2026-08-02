@@ -1,15 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const root = new URL("../", import.meta.url);
-const browserExtensionPackage = existsSync(new URL("pkg/browser-jangolova/package.json", root))
-  ? "pkg/browser-jangolova/package.json"
-  : "pkg/browser-cymonkey/package.json";
-const browserExtensionConfig = browserExtensionPackage.replace("package.json", "wxt.config.ts");
+const browserExtensionPackage = "pkg/browser-ext/package.json";
+const browserExtensionConfig = "pkg/browser-ext/wxt.config.ts";
 
 async function source(path) {
   return readFile(new URL(path, root), "utf8");
@@ -80,6 +77,7 @@ test("CDP interception rules are augmentation-owned and cleaned up before discon
 test("WXT package defines standalone and Xallet spoke build matrices", async () => {
   const pkg = JSON.parse(await source(browserExtensionPackage));
   const config = await source(browserExtensionConfig);
+  assert.equal(pkg.name, "@jangolova/browser-extension");
   assert.match(pkg.scripts["build:standalone"], /chrome.*edge.*firefox/);
   assert.match(pkg.scripts["build:spoke"], /chrome.*edge.*firefox/);
   assert.match(pkg.scripts["build:spoke:chrome"], /--mode spoke/);
@@ -91,18 +89,18 @@ test("WXT package defines standalone and Xallet spoke build matrices", async () 
 });
 
 test("Cymonkey separates its page-safe and privileged extension planes", async () => {
-  const background = await source("pkg/browser-cymonkey/entrypoints/background.ts");
-  const content = await source("pkg/browser-cymonkey/entrypoints/cymonkey.content.ts");
-  const page = await source("pkg/browser-cymonkey/entrypoints/cymonkey-main.ts");
-  const capabilities = await source("pkg/browser-cymonkey/src/capabilities.ts");
-  const engine = await source("pkg/browser-cymonkey/src/engine.ts");
+  const background = await source("pkg/browser-ext/entrypoints/background.ts");
+  const content = await source("pkg/browser-ext/entrypoints/cymonkey.content.ts");
+  const page = await source("pkg/browser-ext/entrypoints/cymonkey-main.ts");
+  const capabilities = await source("pkg/browser-ext/src/capabilities.ts");
+  const engine = await source("pkg/browser-ext/src/engine.ts");
 
   assert.match(page, /root\.cymonkey = Object\.freeze/);
   assert.match(content, /allowedPageActions/);
   assert.match(content, /cannot invoke privileged action/);
   assert.match(background, /acceptsExternalSender\(sender\.id\)/);
   assert.match(engine, /jangolova\.cymonkey\/v1alpha1/);
-  assert.match(engine, /jangolova-(?:cymonkey|browser-extension)-webextension/);
+  assert.match(engine, /jangolova-browser-extension-webextension/);
 
   for (const capability of [
     "script.execute", "script.register", "script.unregister", "style.insert", "style.remove",
@@ -115,12 +113,13 @@ test("Cymonkey separates its page-safe and privileged extension planes", async (
 });
 
 test("Xallet spoke registration is optional and authenticated by discovered hub ID", async () => {
-  const spoke = await source("pkg/browser-cymonkey/src/xallet-spoke.ts");
-  const background = await source("pkg/browser-cymonkey/entrypoints/background.ts");
+  const spoke = await source("pkg/browser-ext/src/xallet-spoke.ts");
+  const background = await source("pkg/browser-ext/entrypoints/background.ts");
+  const policy = await source("pkg/browser-ext/src/services/policy.ts");
   assert.match(spoke, /extension\.name === hubName && extension\.enabled/);
   assert.match(spoke, /REGISTER_SPOKE/);
   assert.match(spoke, /UPDATE_SPOKE_STATE/);
   assert.match(spoke, /senderId === this\.hubId/);
   assert.match(background, /import\.meta\.env\.MODE === 'spoke'/);
-  assert.match(background, /JANGOLOVA_EXTENSION_CALL/);
+  assert.match(policy, /JANGOLOVA_EXTENSION_CALL/);
 });

@@ -23,9 +23,9 @@ same target endpoints and handles without Xallet.
 
 - Playwright attachment to a caller-owned Chromium-compatible CDP target.
 - Puppeteer attachment over CDP or WebDriver BiDi, including Firefox.
-- Cymonkey transport-neutral augmented browsing over CDP, WebDriver BiDi, or a
-  negotiated Safari MCP subset, with an optional Jangolova Browser Extension for
-  persistent scripts, storage, and declarative network rules.
+- Jangolova Browser Extension System with Cymonkey augmented browsing and
+  explicit-registration Pacman/Three.js control. CDP, WebDriver BiDi, Safari
+  MCP, and WebExtension are Jangolova-owned browser backends.
 - WebDriver Classic attachment to an existing caller-owned session, including
   Safari's `safaridriver`.
 - Named WebKit WebDriver attachment for WebKitGTK, WPE WebKit, and Safari.
@@ -57,17 +57,17 @@ jangolova connect-engine \
 ```
 
 Cymonkey needs no extension for its CDP or WebDriver BiDi baseline. To add the
-optional persistent Jangolova Browser Extension backend, build it with WXT and have
+optional persistent Jangolova WebExtension backend, build it with WXT and have
 the target owner install the unpacked extension from
-`pkg/browser-jangolova/.output/<browser>-mv3` (legacy: `pkg/browser-cymonkey/...`):
+`pkg/browser-ext/.output/<browser>-mv3`:
 
 ```bash
-npm install --prefix pkg/browser-jangolova
-npm --prefix pkg/browser-jangolova run check
+npm install --prefix pkg/browser-ext
+npm run build:browser-extension
 ```
 
-For Xallet spoke variants, run `npm --prefix pkg/browser-jangolova run build:spoke` and
-load the matching `<browser>-mv3-spoke` directory. Spoke builds still work standalone
+For the Xallet spoke variants, run `npm run build:browser-extension:spoke` and load the
+matching `<browser>-mv3-spoke` directory. Spoke builds still work standalone
 when Xallet Hub is absent.
 
 ```bash

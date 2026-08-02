@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://jangolova.dev/protocol/cymonkey/v1alpha1/augmentation.schema.json",
-  "title": "Jangolova Browser Extension augmentation contract",
+  "title": "Jangolova Browser Extension Cymonkey augmentation",
   "type": "object",
   "required": ["apiVersion", "kind", "metadata", "spec"],
   "properties": {

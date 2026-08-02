@@ -33,7 +33,7 @@ func ValidateConformance(ctx context.Context, caller bridge.Caller) (Conformance
 	if hello.ProtocolVersion != ProtocolVersion {
 		return ConformanceReport{}, fmt.Errorf("Pacman protocol %q is incompatible; expected %q", hello.ProtocolVersion, ProtocolVersion)
 	}
-	if strings.TrimSpace(hello.Implementation.Name) == "" || (hello.Implementation.Engine != "unity" && hello.Implementation.Engine != "unreal") {
+	if strings.TrimSpace(hello.Implementation.Name) == "" || !supportedEngine(hello.Implementation.Engine) {
 		return ConformanceReport{}, errors.New("Pacman implementation name and supported engine are required")
 	}
 	var capabilities []Capability
@@ -76,6 +76,15 @@ func ValidateConformance(ctx context.Context, caller bridge.Caller) (Conformance
 		return ConformanceReport{}, errors.New("Pacman health requires a valid status and observedAt")
 	}
 	return ConformanceReport{Implementation: hello.Implementation.Name, Capabilities: capabilities, Description: description, Health: health}, nil
+}
+
+func supportedEngine(engine string) bool {
+	switch engine {
+	case "godot", "unity", "unreal", "threejs":
+		return true
+	default:
+		return false
+	}
 }
 
 func ValidateActionRequest(value ActionRequest, capabilities map[string]struct{}) error {
