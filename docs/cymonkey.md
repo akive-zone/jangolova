@@ -1,10 +1,9 @@
-# Cymonkey augmented browsing
+# Cymonkey web augmentation profile
 
-Cymonkey is Jangolova's augmented-browsing subsystem. It contributes
-augmentation lifecycle plus DOM, style, and overlay semantics. Jangolova owns
-backend selection, authentication, injection, storage, network rules, and the
-shared event service used to implement those semantics across CDP, WebDriver
-BiDi, Safari MCP, and the optional Jangolova Browser Extension.
+Cymonkey is Jangolova's runtime-agnostic augmentation engine. This document
+defines its existing web profile. The portable `v1alpha2` core, macOS profile,
+ownership model, and migration policy are defined in
+[Cymonkey runtime-agnostic augmentation contract](cymonkey-runtime.md).
 
 The protocol version is `jangolova.cymonkey/v1alpha1`. Its five operations are
 also exposed to cooperating page code as:

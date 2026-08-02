@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"jangolova/internal/bridge"
+	contract "jangolova/internal/cymonkey"
 	"jangolova/internal/manifest"
 	"jangolova/internal/orchestrator"
 )
@@ -82,8 +84,34 @@ func TestDecodeOptionsDefaultsToAutoAndAcceptsNoExtension(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.Backend != "auto" || config.Extension.Mode != extensionAuto || config.Extension.ID != "" {
+	if config.Profile != "" || config.Backend != "auto" || config.Extension.Mode != extensionAuto || config.Extension.ID != "" {
 		t.Fatalf("decodeOptions() = %#v", config)
+	}
+}
+
+func TestRuntimeProfileIsInferredFromCallerOwnedTarget(t *testing.T) {
+	for name, fixture := range map[string]struct {
+		requested contract.Profile
+		target    orchestrator.EngineTarget
+		want      contract.Profile
+	}{
+		"web":          {target: orchestrator.EngineTarget{Kind: "browser"}, want: contract.ProfileWeb},
+		"macos":        {target: orchestrator.EngineTarget{Kind: "macos-application"}, want: contract.ProfileMacOS},
+		"explicit web": {requested: contract.ProfileWeb, target: orchestrator.EngineTarget{Kind: "browser"}, want: contract.ProfileWeb},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := resolveProfile(fixture.requested, fixture.target)
+			if err != nil || got != fixture.want {
+				t.Fatalf("resolveProfile() = %q, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestMacOSProfileRequiresCallerOwnedNativeHelper(t *testing.T) {
+	_, err := (Adapter{}).Connect(context.Background(), manifest.EngineSpec{Options: json.RawMessage(`{"profile":"macos"}`)}, orchestrator.EngineTarget{Kind: "macos-application"})
+	if err == nil || !strings.Contains(err.Error(), "caller-owned native helper") {
+		t.Fatalf("Connect() error = %v", err)
 	}
 }
 

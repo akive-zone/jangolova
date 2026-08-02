@@ -7,9 +7,15 @@ import (
 	"path"
 	"sort"
 	"strings"
+
+	contract "jangolova/internal/cymonkey"
 )
 
 func normalizeOptions(value *options) error {
+	value.Profile = contract.Profile(strings.ToLower(strings.TrimSpace(string(value.Profile))))
+	if value.Profile != "" && !contract.ValidProfile(value.Profile) {
+		return fmt.Errorf("unsupported Cymonkey profile %q", value.Profile)
+	}
 	value.Backend = strings.ToLower(strings.TrimSpace(value.Backend))
 	if value.Backend == "" {
 		value.Backend = "auto"
@@ -22,7 +28,8 @@ func normalizeOptions(value *options) error {
 		value.Extension.Mode = extensionAuto
 	}
 	switch value.Backend {
-	case "auto", string(BackendCDP), string(BackendBiDi), string(BackendSafariMCP):
+	case "auto", string(BackendCDP), string(BackendBiDi), string(BackendSafariMCP),
+		string(BackendMacOSAppleEvents), string(BackendMacOSAccessibility), string(BackendMacOSCooperative):
 	default:
 		return fmt.Errorf("unsupported Cymonkey backend %q", value.Backend)
 	}
@@ -39,9 +46,15 @@ func normalizeOptions(value *options) error {
 	}
 	value.Policy.AllowedCapabilities = stableStrings(value.Policy.AllowedCapabilities)
 	value.Policy.AllowedOrigins = stableStrings(value.Policy.AllowedOrigins)
+	value.Policy.AllowedBundleIDs = stableStrings(value.Policy.AllowedBundleIDs)
 	for _, pattern := range value.Policy.AllowedOrigins {
 		if err := validateOriginPattern(pattern); err != nil {
 			return err
+		}
+	}
+	for _, bundleID := range value.Policy.AllowedBundleIDs {
+		if !macOSBundleIDPattern.MatchString(bundleID) {
+			return fmt.Errorf("invalid Cymonkey allowed bundle ID %q", bundleID)
 		}
 	}
 	return nil

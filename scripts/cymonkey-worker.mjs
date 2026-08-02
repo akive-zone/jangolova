@@ -155,7 +155,8 @@ async function probeExtension() {
     extensionControl = result.page;
     extensionControlCreated = result.created;
     const extensionHello = await callExtension("hello", {});
-    if (extensionHello?.protocolVersion !== protocolVersion || ![
+    if (![protocolVersion, "jangolova.cymonkey/v1alpha2"].includes(extensionHello?.protocolVersion) ||
+      (extensionHello?.protocolVersion === "jangolova.cymonkey/v1alpha2" && !extensionHello?.profiles?.includes("web")) || ![
       "jangolova-browser-extension-webextension",
       "jangolova-cymonkey-webextension",
     ].includes(extensionHello?.implementation?.name)) {

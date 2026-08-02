@@ -72,6 +72,22 @@
 - [ ] Add signed augmentation bundles and an extension-initiated authenticated
   WebSocket control option.
 
+## Phase 2c: Runtime-agnostic augmentation
+
+- [x] Define `jangolova.cymonkey/v1alpha2` as a portable augmentation contract
+  with typed runtime profiles, surfaces, lifecycle, capability provenance, and
+  target-neutral manifests.
+- [x] Adapt the Jangolova Browser Extension control plane to advertise the
+  `web` profile while retaining the page-safe `v1alpha1` compatibility bridge.
+- [x] Define a bounded macOS profile over typed `app.command.*` and `ui.*`
+  operations without raw AppleScript, raw Apple Events, or unrestricted
+  Accessibility-tree passthrough.
+- [x] Add shared Go validation and a policy-filtered macOS capability mapper.
+- [ ] Implement a caller-owned macOS native helper that negotiates Automation
+  and Accessibility consent and exposes only mapped capabilities.
+- [ ] Run shared lifecycle conformance against web and fake/native macOS
+  backends, including stale surface references and permission revocation.
+
 ## Phase 3: Presentation engines
 
 - [x] Keep the Three.js dynamic-scene experience and protocol.

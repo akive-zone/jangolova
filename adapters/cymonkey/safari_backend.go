@@ -10,13 +10,15 @@ import (
 
 	"jangolova/adapters/safarimcp"
 	"jangolova/internal/bridge"
+	contract "jangolova/internal/cymonkey"
 	"jangolova/internal/manifest"
 	"jangolova/internal/orchestrator"
 )
 
 type safariMCPBackend struct{}
 
-func (safariMCPBackend) Name() BackendName { return BackendSafariMCP }
+func (safariMCPBackend) Name() BackendName         { return BackendSafariMCP }
+func (safariMCPBackend) Profile() contract.Profile { return contract.ProfileWeb }
 func (safariMCPBackend) Compatible(target orchestrator.EngineTarget) bool {
 	_, ok := target.Endpoint("mcp-streamable-http")
 	return target.Kind == "browser" && ok

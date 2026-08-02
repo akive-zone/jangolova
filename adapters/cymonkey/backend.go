@@ -4,15 +4,17 @@ import (
 	"context"
 	"encoding/json"
 
+	contract "jangolova/internal/cymonkey"
 	"jangolova/internal/manifest"
 	"jangolova/internal/orchestrator"
 )
 
-// Backend is the transport-specific boundary below Cymonkey's stable semantic
+// Backend is the runtime-specific boundary below Cymonkey's stable semantic
 // contract. Implementations attach to caller-owned targets and must not own the
-// browser lifecycle.
+// browser or application lifecycle.
 type Backend interface {
 	Name() BackendName
+	Profile() contract.Profile
 	Compatible(orchestrator.EngineTarget) bool
 	Connect(context.Context, manifest.EngineSpec, orchestrator.EngineTarget, options) (orchestrator.EngineInstance, error)
 }
@@ -33,9 +35,11 @@ type extensionOptions struct {
 type policyOptions struct {
 	AllowedCapabilities []string `json:"allowedCapabilities,omitempty"`
 	AllowedOrigins      []string `json:"allowedOrigins,omitempty"`
+	AllowedBundleIDs    []string `json:"allowedBundleIds,omitempty"`
 }
 
 type options struct {
+	Profile    contract.Profile `json:"profile,omitempty"`
 	Backend    string           `json:"backend,omitempty"`
 	NodePath   string           `json:"nodePath,omitempty"`
 	WorkerPath string           `json:"workerPath,omitempty"`

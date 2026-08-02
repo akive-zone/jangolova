@@ -7,10 +7,13 @@ const ProtocolVersion = "jangolova.cymonkey/v1alpha1"
 type BackendName string
 
 const (
-	BackendCDP          BackendName = "cdp"
-	BackendBiDi         BackendName = "bidi"
-	BackendSafariMCP    BackendName = "safari-mcp"
-	BackendWebExtension BackendName = "webextension"
+	BackendCDP                BackendName = "cdp"
+	BackendBiDi               BackendName = "bidi"
+	BackendSafariMCP          BackendName = "safari-mcp"
+	BackendWebExtension       BackendName = "webextension"
+	BackendMacOSAppleEvents   BackendName = "macos-apple-events"
+	BackendMacOSAccessibility BackendName = "macos-accessibility"
+	BackendMacOSCooperative   BackendName = "macos-cooperative"
 )
 
 type SupportMode string

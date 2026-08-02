@@ -21,12 +21,14 @@ export const dispatchEngine = dispatchCymonkey;
 
 function hello() {
   return {
-    protocolVersion: 'jangolova.cymonkey/v1alpha1',
+    protocolVersion: 'jangolova.cymonkey/v1alpha2',
+    compatibleProtocols: ['jangolova.cymonkey/v1alpha1'],
     implementation: {
       name: 'jangolova-browser-extension-webextension',
       version: browser.runtime.getManifest().version,
     },
     backends: ['webextension'],
+    profiles: ['web'],
     features: [
       'augmentation', 'jangolova.platform-services', 'events.cursor', 'scripts.packaged',
       'standalone', 'xallet.spook.runtime-discovery',
@@ -40,6 +42,15 @@ async function describe() {
   const rules = await browser.declarativeNetRequest.getDynamicRules();
   const page = tab?.id === undefined ? null : await sendToTab(tab.id, 'describe', {}).catch(() => null);
   return {
+    revision: `${browser.runtime.getManifest().version}:${scripts.length}:${rules.length}`,
+    surfaces: tab ? [{
+      id: `web:tab-${tab.id}`,
+      profile: 'web',
+      kind: 'document',
+      label: tab.title || undefined,
+      properties: { url: tab.url || null },
+    }] : [],
+    augmentations: [],
     extension: {
       id: browser.runtime.id,
       product: 'Jangolova Browser Extension',

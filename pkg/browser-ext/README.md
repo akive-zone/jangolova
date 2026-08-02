@@ -3,7 +3,9 @@
 This is the canonical WXT implementation of Jangolova's browser runtime. It
 contains shared extension platform services plus two semantic subsystems:
 
-- **Cymonkey** installs and manages augmentations, DOM operations, styles, and overlays.
+- **Cymonkey** consumes the `web` profile of the runtime-agnostic
+  `jangolova.cymonkey/v1alpha2` contract to manage augmentations, DOM
+  operations, styles, and overlays.
 - **Pacman** transports `jangolova.pacman/v1alpha1` calls to an explicitly installed
   browser presentation runtime such as `@jangolova/threejs-pacman`.
 
@@ -18,7 +20,9 @@ npm install
 npm run check
 ```
 
-The page-safe `window.jangolova.cymonkey` API remains compatible. Every build
+The privileged extension control plane advertises `v1alpha2` with profile
+`web`; the page-safe `window.jangolova.cymonkey` API remains compatible with
+the original web-shaped `v1alpha1` projection. Every build
 works standalone and also carries Xallet Spook support. When an enabled
 `Xallet Hub` is discovered, the extension registers with it and accepts
 privileged external calls only from that discovered hub ID. No separate Spook

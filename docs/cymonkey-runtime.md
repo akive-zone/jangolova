@@ -1,0 +1,231 @@
+# Cymonkey runtime-agnostic augmentation contract
+
+Cymonkey is Jangolova's runtime-agnostic augmentation engine. It describes how
+an augmentation is installed, negotiated, applied, observed, updated, disabled,
+and removed from a caller-owned target. Browser scripting is the first
+Cymonkey profile; it is not the definition of Cymonkey.
+
+The runtime-agnostic protocol is `jangolova.cymonkey/v1alpha2`. The existing
+browser-shaped `v1alpha1` contract remains a compatibility profile while web
+and macOS implementations adopt `v1alpha2`.
+
+## Boundary and ownership
+
+Cymonkey owns:
+
+- augmentation manifests and lifecycle;
+- semantic surface discovery and mutation requests;
+- profile capability names and schemas;
+- per-augmentation resource ownership;
+- portable descriptions and events.
+
+Jangolova owns:
+
+- target attachment and backend selection;
+- authentication, authorization, consent, and policy;
+- transport, event buffering, storage, networking, and script execution;
+- WebExtension, CDP, BiDi, Safari MCP, Apple Events, and Accessibility clients;
+- reconnect and credential-renewal behavior.
+
+The target owner or provider owns the application/runtime process, profile,
+documents, windows, display, GPU, credentials, installation, and lifecycle.
+Disconnecting Cymonkey detaches Jangolova; it never quits the target, closes its
+documents, or revokes user-granted operating-system permissions.
+
+Pacman remains a separate semantic presentation contract. Cymonkey augments an
+interface or application surface. Pacman controls explicitly registered scene,
+camera, object, material, animation, timeline, UI, and artifact resources. A
+Cymonkey augmentation may install a Pacman-enabled experience, but it does not
+absorb Pacman's registry or action vocabulary.
+
+## Protocol shape
+
+Every profile implements the same five operations:
+
+| Method | Meaning |
+| --- | --- |
+| `hello` | Negotiate the exact protocol, runtime profile, implementation, and active backends. |
+| `capabilities` | Return policy-filtered, schema-described operations actually supported now. |
+| `describe` | Describe target surfaces and installed augmentations without leaking unrestricted target data. |
+| `act` | Invoke one advertised semantic capability. |
+| `events` | Non-destructively read bounded semantic events after an opaque cursor. |
+
+A capability identifies its profile and provider:
+
+```json
+{
+  "name": "ui.action.invoke",
+  "profile": "macos",
+  "backend": "macos-accessibility",
+  "support": "mapped",
+  "lifetime": "attachment",
+  "persistence": "session",
+  "effect": "write",
+  "inputSchema": {
+    "type": "object",
+    "required": ["surfaceId", "elementId", "action"]
+  }
+}
+```
+
+`support` is `native`, `mapped`, or `emulated`. `lifetime` is `call`,
+`surface`, `attachment`, or `installation`. `persistence` is `ephemeral`,
+`session`, or `persistent`. These fields describe achieved behavior; they do
+not grant authority.
+
+## Core vocabulary
+
+The portable core is deliberately small:
+
+- `augmentation.install`, `augmentation.update`, `augmentation.uninstall`
+- `augmentation.enable`, `augmentation.disable`, `augmentation.list`
+- `augmentation.describe`
+- `surface.list`, `surface.describe`
+- `overlay.mount`, `overlay.patch`, `overlay.unmount` when the selected host
+  provides an owned overlay surface
+
+Profile-specific operations are never inferred from the existence of a generic
+automation tool. Every capability must be probed, policy-filtered, and
+advertised with its input schema before `act` accepts it.
+
+## Target-neutral augmentation manifest
+
+`v1alpha2` replaces browser-only `matches` with typed targets:
+
+```json
+{
+  "apiVersion": "jangolova.cymonkey/v1alpha2",
+  "kind": "Augmentation",
+  "metadata": {
+    "id": "music-companion",
+    "revision": "sha256:abc123"
+  },
+  "spec": {
+    "targets": [{
+      "profile": "macos",
+      "match": {"bundleId": "com.apple.Music"}
+    }],
+    "permissions": [
+      "app.command.invoke",
+      "ui.query",
+      "ui.observe",
+      "overlay.mount"
+    ]
+  }
+}
+```
+
+The manifest requests semantic permissions. It does not contain credentials,
+TCC grants, entitlements, resolved endpoints, raw AppleScript, or arbitrary
+browser-extension API calls.
+
+## Web profile
+
+The web profile is consumed by the Jangolova Browser Extension and by
+Jangolova's CDP, WebDriver BiDi, and Safari MCP backends.
+
+Its specialized vocabulary includes:
+
+- `dom.query`, `dom.observe`, `dom.patch`
+- `script.execute`, `script.register`, `script.unregister`
+- `style.insert`, `style.remove`
+- `overlay.mount`, `overlay.patch`, `overlay.unmount`
+
+Web targets match origins and document URLs. The public
+`window.jangolova.cymonkey` bridge remains a page-safe projection of the web
+profile. Privileged operations stay on Jangolova's authenticated control plane.
+The browser extension consumes the Cymonkey contract; it is not the contract.
+
+## macOS profile
+
+The macOS profile has two complementary backend families.
+
+### Apple Events
+
+Apple Events are structured interprocess messages understood by applications
+that expose scripting terminology. AppleScript is one language that produces
+Apple Events; it is not the semantic API Cymonkey should expose.
+
+The macOS profile maps discovered and allowlisted scripting commands to:
+
+- `app.command.list`
+- `app.command.describe`
+- `app.command.invoke`
+
+Commands are scoped by target bundle identifier and, when available, scripting
+access group. Cymonkey never advertises `applescript.execute` or a raw Apple
+Event passthrough. The backend translates typed inputs into an allowlisted
+event only after authorization.
+
+Apple documents Apple Events as structured messages used to request operations
+and receive replies across process boundaries:
+<https://developer.apple.com/documentation/coreservices/apple_events>.
+
+### Accessibility
+
+Applications without useful scripting terminology may expose an Accessibility
+hierarchy. Jangolova maps bounded `AXUIElement` operations to:
+
+- `ui.query`
+- `ui.observe`
+- `ui.action.invoke`
+- `ui.attribute.set`
+
+Accessibility identifiers are observations, not automatically stable semantic
+IDs. A backend must scope them to an attachment and reject stale references.
+It may expose only supported actions and settable attributes. It must not dump
+the entire system-wide accessibility tree by default.
+
+Apple's Accessibility API represents accessible application elements and
+supports bounded attribute access, actions, mutation, and notifications:
+<https://developer.apple.com/documentation/applicationservices/axuielement_h>.
+
+### Consent and sandbox policy
+
+macOS authorization is part of capability negotiation:
+
+- Apple Events require Automation consent and, for sandboxed applications,
+  target-specific scripting entitlements or permitted exceptions.
+- Accessibility operations require the user's Accessibility authorization.
+- Missing consent produces reduced or unavailable capabilities; Cymonkey never
+  bypasses the operating system prompt or silently falls back to unrestricted
+  script execution.
+
+Apple documents target-specific scripting entitlements and sandbox limits at
+<https://developer.apple.com/library/archive/documentation/Miscellaneous/Reference/EntitlementKeyReference/Chapters/EnablingAppSandbox.html>.
+
+## Backend negotiation
+
+Jangolova selects a backend compatible with the caller-owned target and merges
+only compatible capabilities:
+
+| Profile | Backends |
+| --- | --- |
+| `web` | CDP, WebDriver BiDi, Safari MCP, Jangolova Browser Extension |
+| `macos` | Apple Events, Accessibility, future cooperative native bridge |
+
+Hybrid macOS operation may combine Apple Events for application commands with
+Accessibility for UI observation. The merged description retains backend
+provenance for every capability. A command name discovered through Apple Events
+does not authorize an Accessibility mutation, and vice versa.
+
+## Migration from `v1alpha1`
+
+- `v1alpha1` remains the web compatibility protocol.
+- Existing browser manifests map `matches` to a `web` target.
+- Browser lifetimes map as: `document` to `surface`, `browser-session` to
+  `attachment`, and `profile` to `installation`.
+- Existing capability names remain valid inside the web profile.
+- New runtime-agnostic callers request `v1alpha2` and inspect `profile`.
+- No automatic conversion grants a capability absent from the negotiated
+  backend.
+
+## Initial delivery sequence
+
+1. Publish this contract and the `v1alpha2` schemas.
+2. Add shared Go protocol/profile validation independent of target kind.
+3. Adapt the current browser implementation as the `web` profile.
+4. Add a macOS capability mapper boundary for Apple Events and Accessibility.
+5. Add fake backends and shared conformance tests before binding native APIs.
+6. Implement a caller-owned macOS native helper without adding target lifecycle
+   ownership to Jangolova.

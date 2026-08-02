@@ -4,9 +4,10 @@ export type Capability = {
   name: string;
   description: string;
   effect: CapabilityEffect;
+  profile: 'web';
   backend: 'webextension';
   support: 'native' | 'mapped' | 'emulated';
-  lifetime: 'call' | 'document' | 'browser-session' | 'profile';
+  lifetime: 'call' | 'surface' | 'attachment' | 'installation';
   persistence: 'ephemeral' | 'session' | 'persistent';
   inputSchema: {
     type: 'object';
@@ -19,6 +20,8 @@ export type CymonkeyEvent = {
   id: string;
   type: string;
   occurredAt: string;
+  profile: 'web';
+  backend?: 'webextension';
   data: Record<string, unknown>;
 };
 
@@ -53,13 +56,14 @@ export function capability(
   description: string,
   effect: CapabilityEffect,
   required: string[],
-  lifetime: Capability['lifetime'] = 'profile',
+  lifetime: Capability['lifetime'] = 'installation',
   persistence: Capability['persistence'] = 'persistent',
 ): Capability {
   return {
     name,
     description,
     effect,
+    profile: 'web',
     backend: 'webextension',
     support: 'native',
     lifetime,

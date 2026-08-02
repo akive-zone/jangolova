@@ -53,6 +53,21 @@ test("versioned Cymonkey schemas define capability provenance and one augmentati
   assert.deepEqual(augmentation.$defs.script.oneOf, [{ required: ["source"] }, { required: ["files"] }]);
 });
 
+test("v1alpha2 defines runtime-agnostic web and macOS profiles", async () => {
+  const protocol = JSON.parse(await source("protocol/cymonkey/v1alpha2/protocol.schema.json"));
+  const augmentation = JSON.parse(await source("protocol/cymonkey/v1alpha2/augmentation.schema.json"));
+  assert.equal(protocol.$defs.hello.properties.protocolVersion.const, "jangolova.cymonkey/v1alpha2");
+  assert.deepEqual(protocol.$defs.profile.enum, ["web", "macos"]);
+  assert.ok(protocol.$defs.capability.required.includes("profile"));
+  assert.ok(protocol.$defs.backend.enum.includes("macos-apple-events"));
+  assert.ok(protocol.$defs.backend.enum.includes("macos-accessibility"));
+  assert.equal(augmentation.properties.apiVersion.const, "jangolova.cymonkey/v1alpha2");
+  assert.equal(augmentation.$defs.webTarget.properties.profile.const, "web");
+  assert.equal(augmentation.$defs.macosTarget.properties.profile.const, "macos");
+  assert.equal(augmentation.$defs.macosTarget.properties.match.properties.bundleId.type, "string");
+  assert.doesNotMatch(JSON.stringify(augmentation), /applescript\.execute|raw-apple-event/);
+});
+
 test("transport mappings expose semantics without raw protocol passthrough", async () => {
   const worker = await source("scripts/cymonkey-worker.mjs");
   const safari = await source("adapters/cymonkey/safari_backend.go");
@@ -97,7 +112,9 @@ test("Cymonkey separates its page-safe and privileged extension planes", async (
   assert.match(content, /allowedPageActions/);
   assert.match(content, /cannot invoke privileged action/);
   assert.match(background, /acceptsExternalSender\(sender\.id\)/);
-  assert.match(engine, /jangolova\.cymonkey\/v1alpha1/);
+  assert.match(engine, /jangolova\.cymonkey\/v1alpha2/);
+  assert.match(engine, /compatibleProtocols: \['jangolova\.cymonkey\/v1alpha1'\]/);
+  assert.match(engine, /profiles: \['web'\]/);
   assert.match(engine, /jangolova-browser-extension-webextension/);
 
   for (const capability of [

@@ -20,12 +20,18 @@ discovery across CDP, WebDriver BiDi, Safari MCP, and WebExtension, plus the
 authenticated control plane, browser policy, packaged injection, scoped
 storage, network rules, and shared event service.
 
-Cymonkey is its augmented-browsing subsystem. It owns augmentation lifecycle
-and the DOM/style/overlay vocabulary, while consuming Jangolova platform
-services. Pacman remains the engine-neutral explicit-registration presentation
-contract. In browsers, `@jangolova/threejs-pacman` maps allowlisted stable IDs
-to Three.js scenes, objects, cameras, materials, and animation actions. It never
-scans arbitrary page or scene objects.
+Cymonkey is its runtime-agnostic augmentation subsystem. Its portable
+`jangolova.cymonkey/v1alpha2` core owns augmentation lifecycle, surface
+discovery, overlays, and capability negotiation. Runtime profiles add bounded
+vocabularies: the web profile adds DOM/style/script operations; the macOS
+profile maps allowlisted Apple Events and Accessibility operations to typed
+`app.command.*` and `ui.*` capabilities. Jangolova owns each runtime backend,
+its authenticated transport, consent checks, and policy.
+
+Pacman remains the engine-neutral explicit-registration presentation contract.
+In browsers, `@jangolova/threejs-pacman` maps allowlisted stable IDs to Three.js
+scenes, objects, cameras, materials, and animation actions. It never scans
+arbitrary page or scene objects.
 
 The public page bridge contains only page-safe Cymonkey operations. Platform
 services and Pacman control are reachable only through the authenticated
@@ -50,6 +56,9 @@ User, agent, IDE, or application
         |       +-- optional Jangolova WebExtension --+
         |               +-- Cymonkey subsystem -------+
         |               +-- Pacman / Three.js --------+
+        +-- Cymonkey macOS profile -------------------+
+        |       +-- allowlisted Apple Events ---------+
+        |       +-- bounded Accessibility operations +
         +-- WebDriver Classic ------ existing session+--> caller-owned targets
         +-- Safari MCP -------- Streamable HTTP relay+
         +-- Godot / Unity / Unreal bridge WS --------+
@@ -94,7 +103,7 @@ user or another system supplies the same target contract.
 An interaction adapter receives an adapter name, optional interaction-specific
 options, and a caller-owned target containing:
 
-- a target kind such as `browser`;
+- a target kind such as `browser` or `macos-application`;
 - typed endpoints such as `cdp`, `webdriver-bidi`, `webdriver`,
   `mcp-streamable-http`, or `websocket`;
 - optional opaque native handles.
@@ -124,7 +133,8 @@ internal/orchestrator/      interaction lifecycle and target contracts
 internal/bridge/            engine-neutral semantic methods
 internal/grimlock/          ADK agents and caller-supplied model connectors
 adapters/browserautomation/ Playwright CDP and Puppeteer CDP/BiDi attachment
-adapters/cymonkey/          transport-neutral augmented browsing and backend policy
+internal/cymonkey/          runtime-agnostic augmentation contract and validation
+adapters/cymonkey/          web backends plus bounded macOS capability mapping
 adapters/webdriverclassic/  existing W3C WebDriver session attachment
 adapters/safarimcp/         caller-owned Safari MCP relay attachment
 pkg/browser-ext/           single-build WXT runtime with optional Xallet Spook activation
@@ -140,4 +150,6 @@ tests/docker/               target-owning portability fixture only
 
 No package imports Xallet. No product adapter provisions a target runtime.
 The complete interface model is documented in
-[Interface creation and operation](interface-model.md).
+[Interface creation and operation](interface-model.md). Cymonkey's portable
+contract and profile boundary are documented in
+[Cymonkey runtime-agnostic augmentation](cymonkey-runtime.md).

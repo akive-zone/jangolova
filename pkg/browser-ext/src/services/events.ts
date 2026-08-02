@@ -24,6 +24,8 @@ export function appendEvent(
       id: String(sequence),
       type,
       occurredAt: new Date().toISOString(),
+      profile: 'web',
+      backend: 'webextension',
       data: tabId === undefined ? { ...data } : { ...data, tabId },
     });
     if (events.length > 256) events.splice(0, events.length - 256);

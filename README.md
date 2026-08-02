@@ -26,6 +26,9 @@ same target endpoints and handles without Xallet.
 - Jangolova Browser Extension System with Cymonkey augmented browsing and
   explicit-registration Pacman/Three.js control. CDP, WebDriver BiDi, Safari
   MCP, and WebExtension are Jangolova-owned browser backends.
+- Runtime-agnostic Cymonkey augmentation profiles: web today, plus a bounded
+  macOS contract for allowlisted application commands and Accessibility UI
+  operations through caller-owned native helpers.
 - WebDriver Classic attachment to an existing caller-owned session, including
   Safari's `safaridriver`.
 - Named WebKit WebDriver attachment for WebKitGTK, WPE WebKit, and Safari.
@@ -119,7 +122,8 @@ targets solely to verify attachment portability.
 See [Architecture](docs/architecture.md), [Interaction provider](docs/engine-provider.md),
 [Deployment modes](docs/deployment-modes.md), [Bridge protocol](docs/bridge-protocol.md),
 [Grimlock agent subsystem](docs/grimlock.md),
-[Cymonkey augmented browsing](docs/cymonkey.md),
+[Cymonkey runtime-agnostic augmentation](docs/cymonkey-runtime.md),
+[Cymonkey web profile](docs/cymonkey.md),
 [Pacman](docs/pacman.md),
 [interface creation and operation](docs/interface-model.md),
 [caller-supplied targets](docs/target-descriptor.md),
