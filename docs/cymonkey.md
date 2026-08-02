@@ -223,6 +223,13 @@ service-worker/extension-origin target. The current development backend uses
 the latter and verifies the expected extension origin and implementation
 handshake. It never dispatches privileged commands through `window.postMessage`.
 
+All private transports feed the same per-capability authorization gate. The
+gate evaluates caller, effect, resolved tab/origin, and augmentation ID before
+dispatch, then emits redacted requested/succeeded/denied/failed audit events.
+The optional outbound WebSocket is implemented in the same artifact and is
+activated only by trusted caller configuration. See
+[browser-extension control plane](browser-extension-control.md).
+
 The extension consists of:
 
 - a Manifest V3 service worker owning scripting, storage, and declarative
@@ -250,6 +257,8 @@ When the hub is absent, the same artifact continues to operate standalone.
    policy allow it.
 7. Preserve the caller-owned browser lifecycle on success, error, reconnect,
    and disconnect.
+8. Default-deny write/external extension calls until an authenticated bootstrap
+   caller installs an explicit fine-grained policy.
 
 ## Browser extension package
 

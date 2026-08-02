@@ -17,6 +17,12 @@ Jangolova owns extension authentication, policy, packaged script injection,
 namespaced storage, declarative network rules, and the shared cursor event log.
 Neither subsystem exposes raw `chrome.*` or `browser.*` APIs to the page.
 
+Every privileged call passes the same fine-grained authorization and redacted
+audit layer after transport authentication. The single build supports Xallet
+Spook, extension-origin/CDP control, and an optional caller-configured outbound
+authenticated WebSocket. See `docs/browser-extension-control.md` for policy,
+bootstrap, token-expiry, and generated protocol details.
+
 Build the single artifact for each browser with:
 
 ```sh

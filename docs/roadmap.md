@@ -70,8 +70,11 @@
   one standalone artifact with runtime-activated Xallet Spook integration.
 - [ ] Add live cross-browser extension fixtures.
 - [x] Add provider-level capability and origin filtering.
-- [ ] Add signed augmentation bundles and an extension-initiated authenticated
-  WebSocket control option.
+- [x] Add per-call extension policy across caller, capability, effect,
+  origin/tab, and augmentation with redacted audit lifecycle events.
+- [x] Add an optional extension-initiated authenticated WebSocket using a
+  caller-supplied short-lived token in the same browser artifact.
+- [ ] Add signed augmentation bundles.
 
 ## Phase 2c: Runtime-agnostic augmentation
 
@@ -152,5 +155,8 @@
   bounded backoff and action-safe lifecycle events.
 - [ ] Add caller reconciliation fixtures for rebuilding desired interaction
   instances after the Jangolova provider process restarts.
-- [ ] Add generated protocol clients and compatibility fixtures.
+- [x] Add generated TypeScript/Go browser-extension protocol bindings and
+  recorded legacy/current compatibility fixtures.
+- [ ] Extend generated clients and compatibility fixtures to the remaining
+  Jangolova protocols after their contracts stabilize.
 - [ ] Sign and publish versioned interaction-runtime images.

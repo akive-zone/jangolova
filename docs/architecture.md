@@ -20,6 +20,11 @@ discovery across CDP, WebDriver BiDi, Safari MCP, and WebExtension, plus the
 authenticated control plane, browser policy, packaged injection, scoped
 storage, network rules, and shared event service.
 
+Its private extension control plane authenticates transport identity and then
+separately authorizes every operation by capability, effect, target origin/tab,
+and augmentation. Xallet Spook, optional caller-configured outbound WebSocket,
+and extension-origin/CDP calls share this gate and its redacted audit stream.
+
 Cymonkey is its runtime-agnostic augmentation subsystem. Its portable
 `jangolova.cymonkey/v1alpha2` core owns augmentation lifecycle, surface
 discovery, overlays, and capability negotiation. Runtime profiles add bounded
@@ -155,6 +160,8 @@ pkg/macos-cymonkey-helper/  caller-owned Swift Apple Events/Accessibility bindin
 pkg/macos-ext/              menu-bar host, managed helper mode, and Safari container
 pkg/userscript-runtime/     shared Cymonkey userscript validation and registration planning
 protocol/userscript/        versioned Cymonkey userscript payload schema
+protocol/browser-extension/ schema, recorded exchanges, and generated binding source
+internal/browserextensionprotocol/ generated Go browser-extension bindings
 pkg/threejs-pacman/         explicit-registration Three.js Pacman runtime
 pkg/                        distributable Godot, Unity, and Unreal Pacman packages
 tests/godot-pacman-fixture/ license-free Godot conformance project

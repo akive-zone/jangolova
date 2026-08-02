@@ -156,6 +156,7 @@ See [Architecture](docs/architecture.md), [Interaction provider](docs/engine-pro
 [Grimlock agent subsystem](docs/grimlock.md),
 [Cymonkey runtime-agnostic augmentation](docs/cymonkey-runtime.md),
 [Cymonkey web profile](docs/cymonkey.md),
+[browser-extension control plane](docs/browser-extension-control.md),
 [Cymonkey userscripts](docs/userscripts.md),
 [Jangolova macOS extension](docs/macos-extension.md),
 [Pacman](docs/pacman.md),
