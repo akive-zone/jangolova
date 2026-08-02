@@ -15,6 +15,17 @@ type EngineInstance interface {
 	Disconnect(context.Context) error
 }
 
+// CallerLaunch contains ephemeral material that an authorized target owner
+// needs to launch a caller-owned cooperative helper. It is returned only from
+// the initial connection response and must not be persisted or logged.
+type CallerLaunch struct {
+	Environment map[string]string
+}
+
+type EngineCallerLaunchProvider interface {
+	EngineCallerLaunch() CallerLaunch
+}
+
 // TargetEndpoint identifies a caller-owned service that an interaction engine
 // can attach to, such as a Chromium CDP endpoint or a Unity bridge endpoint.
 type TargetEndpoint struct {

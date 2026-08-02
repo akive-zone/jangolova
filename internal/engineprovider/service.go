@@ -282,6 +282,10 @@ func (s *Service) handleInstances(w http.ResponseWriter, r *http.Request) {
 		OccurredAt: time.Now().UTC(),
 	})
 	value := describeInstance(request.InstanceID, record)
+	if launchProvider, ok := instance.(orchestrator.EngineCallerLaunchProvider); ok {
+		launch := launchProvider.EngineCallerLaunch()
+		value.CallerLaunch = &CallerLaunch{Environment: cloneValues(launch.Environment)}
+	}
 	s.mu.Unlock()
 	if source, ok := instance.(orchestrator.EngineEventSource); ok {
 		if events := source.EngineEvents(); events != nil {

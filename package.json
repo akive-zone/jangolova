@@ -12,6 +12,7 @@
     "compile:threejs-pacman": "pkg/browser-ext/node_modules/.bin/tsc -p pkg/threejs-pacman/tsconfig.json --noEmit",
     "test:browser-worker": "node --test tests/browser-worker-contract-test.mjs",
     "test:cymonkey": "node --test tests/cymonkey-contract-test.mjs",
+    "test:cymonkey:macos-helper": "swift test --package-path pkg/macos-cymonkey-helper && node --test tests/macos-cymonkey-helper-contract-test.mjs",
     "test:browser-extension": "node --test tests/browser-extension-system-contract-test.mjs",
     "test:xallet-spook": "node --test tests/xallet-spook-client-test.mjs",
     "test:threejs-pacman": "pkg/browser-ext/node_modules/.bin/tsc -p pkg/threejs-pacman/tsconfig.json && node --test tests/threejs-pacman-test.mjs",

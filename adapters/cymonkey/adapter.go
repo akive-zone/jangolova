@@ -59,12 +59,15 @@ var _ orchestrator.EngineEventSource = (*instance)(nil)
 var _ bridge.Caller = (*instance)(nil)
 
 func (Adapter) InspectEngine(context.Context) orchestrator.EngineInspection {
-	capabilities := capabilityNames()
+	capabilities := stableStrings(append(capabilityNames(),
+		"app.command.describe", "app.command.invoke", "app.command.list",
+		"target.macos-cooperative", "ui.action.invoke", "ui.attribute.set", "ui.query",
+	))
 	if _, err := exec.LookPath("node"); err != nil {
-		return orchestrator.EngineInspection{Capabilities: capabilities, Message: "Node.js is required: " + err.Error()}
+		return orchestrator.EngineInspection{Available: true, Capabilities: capabilities, Message: "macOS profile is available; web profile requires Node.js: " + err.Error()}
 	}
 	if _, err := resolveWorker(""); err != nil {
-		return orchestrator.EngineInspection{Capabilities: capabilities, Message: err.Error()}
+		return orchestrator.EngineInspection{Available: true, Capabilities: capabilities, Message: "macOS profile is available; web profile is unavailable: " + err.Error()}
 	}
 	return orchestrator.EngineInspection{Available: true, Capabilities: capabilities}
 }

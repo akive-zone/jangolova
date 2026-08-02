@@ -32,6 +32,10 @@ type extensionOptions struct {
 	ID   string        `json:"id,omitempty"`
 }
 
+type nativeOptions struct {
+	ControlListen string `json:"controlListen,omitempty"`
+}
+
 type policyOptions struct {
 	AllowedCapabilities []string `json:"allowedCapabilities,omitempty"`
 	AllowedOrigins      []string `json:"allowedOrigins,omitempty"`
@@ -44,6 +48,7 @@ type options struct {
 	NodePath   string           `json:"nodePath,omitempty"`
 	WorkerPath string           `json:"workerPath,omitempty"`
 	Extension  extensionOptions `json:"extension,omitempty"`
+	Native     nativeOptions    `json:"native,omitempty"`
 	Policy     policyOptions    `json:"policy,omitempty"`
 
 	// extensionId is accepted as a compatibility alias for the original

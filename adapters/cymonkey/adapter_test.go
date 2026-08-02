@@ -108,10 +108,15 @@ func TestRuntimeProfileIsInferredFromCallerOwnedTarget(t *testing.T) {
 	}
 }
 
-func TestMacOSProfileRequiresCallerOwnedNativeHelper(t *testing.T) {
-	_, err := (Adapter{}).Connect(context.Background(), manifest.EngineSpec{Options: json.RawMessage(`{"profile":"macos"}`)}, orchestrator.EngineTarget{Kind: "macos-application"})
-	if err == nil || !strings.Contains(err.Error(), "caller-owned native helper") {
-		t.Fatalf("Connect() error = %v", err)
+func TestMacOSProfileReturnsCallerOwnedNativeHelperLaunchMaterial(t *testing.T) {
+	connected, err := (Adapter{}).Connect(context.Background(), manifest.EngineSpec{Options: json.RawMessage(`{"profile":"macos"}`)}, orchestrator.EngineTarget{Kind: "macos-application"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connected.Disconnect(context.Background())
+	launch, ok := connected.(orchestrator.EngineCallerLaunchProvider)
+	if !ok || !strings.HasPrefix(launch.EngineCallerLaunch().Environment["JANGOLOVA_CYMONKEY_CONTROL_URL"], "ws://127.0.0.1:") {
+		t.Fatalf("caller launch = %#v", launch)
 	}
 }
 

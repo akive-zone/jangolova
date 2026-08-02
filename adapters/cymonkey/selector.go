@@ -26,6 +26,7 @@ var configuredBackends = []Backend{
 	processBackend{name: BackendCDP, endpointProtocol: "cdp"},
 	processBackend{name: BackendBiDi, endpointProtocol: "webdriver-bidi"},
 	safariMCPBackend{},
+	macOSCooperativeBackend{},
 }
 
 func (Adapter) Connect(ctx context.Context, spec manifest.EngineSpec, target orchestrator.EngineTarget) (orchestrator.EngineInstance, error) {

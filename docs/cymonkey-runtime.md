@@ -202,12 +202,42 @@ only compatible capabilities:
 | Profile | Backends |
 | --- | --- |
 | `web` | CDP, WebDriver BiDi, Safari MCP, Jangolova Browser Extension |
-| `macos` | Apple Events, Accessibility, future cooperative native bridge |
+| `macos` | Apple Events, Accessibility, caller-owned cooperative native helper |
 
 Hybrid macOS operation may combine Apple Events for application commands with
 Accessibility for UI observation. The merged description retains backend
 provenance for every capability. A command name discovered through Apple Events
 does not authorize an Accessibility mutation, and vice versa.
+
+## Native helper attachment
+
+`pkg/macos-cymonkey-helper` is the reference Swift binding. It uses AppKit's
+Apple Event descriptors and the `AXUIElement` APIs, but remains a process owned
+by the native target provider:
+
+1. Jangolova creates an ephemeral loopback WebSocket control host and a random
+   bearer token for a `macos-application` interaction instance.
+2. The authenticated initial connection response returns one-time caller-launch
+   environment containing the control URL, token, and exact Cymonkey protocol.
+3. The target owner adds its helper configuration path, then launches its own
+   signed helper. Jangolova never invokes the executable.
+4. The helper connects outward, and Jangolova validates its `v1alpha2` macOS
+   profile plus every capability descriptor before accepting actions.
+5. Disconnect closes the control host. It does not quit an application, revoke
+   TCC consent, or manage the helper's signing identity.
+
+The owner configuration maps semantic command names to fixed four-character
+Apple Event class/ID pairs and parameter schemas. The helper checks that the
+target application is already running, preventing command dispatch from being
+used as an application launcher. Accessibility searches enforce depth/result
+limits, and returned element IDs are valid only for the current process-backed
+surface attachment.
+
+Missing Accessibility consent removes `ui.*` from the negotiated capability
+set. Automation consent remains target/command-specific and is enforced by
+macOS when an allowlisted command is invoked. A target owner signs or embeds
+the helper using its own identity and entitlements; repository builds do not
+attempt ad-hoc or production signing.
 
 ## Migration from `v1alpha1`
 
@@ -220,12 +250,12 @@ does not authorize an Accessibility mutation, and vice versa.
 - No automatic conversion grants a capability absent from the negotiated
   backend.
 
-## Initial delivery sequence
+## Initial delivery status
 
 1. Publish this contract and the `v1alpha2` schemas.
 2. Add shared Go protocol/profile validation independent of target kind.
 3. Adapt the current browser implementation as the `web` profile.
 4. Add a macOS capability mapper boundary for Apple Events and Accessibility.
 5. Add fake backends and shared conformance tests before binding native APIs.
-6. Implement a caller-owned macOS native helper without adding target lifecycle
-   ownership to Jangolova.
+6. Implemented a caller-owned Swift macOS helper and authenticated reverse
+   attachment without adding target lifecycle ownership to Jangolova.

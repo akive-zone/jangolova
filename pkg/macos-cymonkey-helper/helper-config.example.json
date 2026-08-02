@@ -1,0 +1,19 @@
+{
+  "allowedBundleIds": ["com.apple.Music"],
+  "appleEventCommands": [
+    {
+      "name": "play",
+      "bundleId": "com.apple.Music",
+      "eventClass": "hook",
+      "eventId": "Play",
+      "parameters": []
+    }
+  ],
+  "accessibility": {
+    "allowedBundleIds": ["com.apple.Music"],
+    "allowedWritableAttributes": ["AXValue"],
+    "maxDepth": 8,
+    "maxResults": 50,
+    "promptForAccessibilityConsent": false
+  }
+}

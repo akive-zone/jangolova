@@ -167,6 +167,29 @@ The response describes the interaction instance, not the target:
 }
 ```
 
+Cooperative native helpers are the exception that may add `callerLaunch` to
+the successful `POST /v1/instances` response. For example, connecting the
+Cymonkey `macos` profile returns an ephemeral loopback control URL, bearer
+token, and exact protocol as launch environment. The authorized target owner
+adds its configuration path and launches its signed helper:
+
+```json
+{
+  "callerLaunch": {
+    "environment": {
+      "JANGOLOVA_CYMONKEY_CONTROL_URL": "ws://127.0.0.1:49152/bridge",
+      "JANGOLOVA_CYMONKEY_CONTROL_TOKEN": "ephemeral-secret",
+      "JANGOLOVA_CYMONKEY_PROTOCOL": "jangolova.cymonkey/v1alpha2"
+    }
+  }
+}
+```
+
+This material appears only in the initial authenticated connection response.
+It is not retained in subsequent instance descriptions, events, or logs.
+Jangolova creates the control attachment but never launches or signs the
+caller-owned helper.
+
 Call the common semantic protocol:
 
 ```http

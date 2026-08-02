@@ -90,6 +90,20 @@ func (nilEngineAdapter) Connect(context.Context, manifest.EngineSpec, orchestrat
 type healthEngineAdapter struct{}
 type healthEngineInstance struct{}
 
+type launchEngineAdapter struct{}
+type launchEngineInstance struct{ fakeEngineInstance }
+
+func (launchEngineAdapter) Connect(context.Context, manifest.EngineSpec, orchestrator.EngineTarget) (orchestrator.EngineInstance, error) {
+	return &launchEngineInstance{fakeEngineInstance: fakeEngineInstance{events: make(chan orchestrator.EngineEvent, 1)}}, nil
+}
+
+func (*launchEngineInstance) EngineCallerLaunch() orchestrator.CallerLaunch {
+	return orchestrator.CallerLaunch{Environment: map[string]string{
+		"JANGOLOVA_CYMONKEY_CONTROL_URL":   "ws://127.0.0.1:7394/bridge",
+		"JANGOLOVA_CYMONKEY_CONTROL_TOKEN": "ephemeral-test-token",
+	}}
+}
+
 func (healthEngineAdapter) Connect(context.Context, manifest.EngineSpec, orchestrator.EngineTarget) (orchestrator.EngineInstance, error) {
 	return healthEngineInstance{}, nil
 }
@@ -379,6 +393,41 @@ func TestServiceRequiresAuthorization(t *testing.T) {
 	service.Routes().ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", response.Code)
+	}
+}
+
+func TestServiceReturnsCallerLaunchOnlyOnInitialConnection(t *testing.T) {
+	registry := orchestrator.NewRegistry()
+	if err := registry.RegisterEngine("launch-fixture", launchEngineAdapter{}); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(registry, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := performRequest(service.Routes(), http.MethodPost, "/v1/instances", `{
+		"apiVersion":"interaction.engine/v1alpha1","instanceId":"launch-one",
+		"engine":{"adapter":"launch-fixture"},"target":{"kind":"macos-application"}
+	}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("connect status = %d: %s", response.Code, response.Body.String())
+	}
+	var connected Instance
+	if err := json.NewDecoder(response.Body).Decode(&connected); err != nil {
+		t.Fatal(err)
+	}
+	if connected.CallerLaunch == nil || connected.CallerLaunch.Environment["JANGOLOVA_CYMONKEY_CONTROL_TOKEN"] != "ephemeral-test-token" {
+		t.Fatalf("caller launch = %#v", connected.CallerLaunch)
+	}
+
+	response = performRequest(service.Routes(), http.MethodGet, "/v1/instances/launch-one", "")
+	describedBody := response.Body.Bytes()
+	var described Instance
+	if err := json.Unmarshal(describedBody, &described); err != nil {
+		t.Fatal(err)
+	}
+	if described.CallerLaunch != nil || strings.Contains(string(describedBody), "ephemeral-test-token") {
+		t.Fatalf("caller launch persisted in instance description: %s", describedBody)
 	}
 }
 

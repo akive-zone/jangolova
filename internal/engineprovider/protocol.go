@@ -52,12 +52,17 @@ type ConnectRequest struct {
 }
 
 type Instance struct {
-	APIVersion   string   `json:"apiVersion"`
-	InstanceID   string   `json:"instanceId"`
-	Adapter      string   `json:"adapter"`
-	Status       string   `json:"status"`
-	Health       Health   `json:"health"`
-	Capabilities []string `json:"capabilities,omitempty"`
+	APIVersion   string        `json:"apiVersion"`
+	InstanceID   string        `json:"instanceId"`
+	Adapter      string        `json:"adapter"`
+	Status       string        `json:"status"`
+	Health       Health        `json:"health"`
+	Capabilities []string      `json:"capabilities,omitempty"`
+	CallerLaunch *CallerLaunch `json:"callerLaunch,omitempty"`
+}
+
+type CallerLaunch struct {
+	Environment map[string]string `json:"environment"`
 }
 
 type Health struct {

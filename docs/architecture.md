@@ -138,6 +138,7 @@ adapters/cymonkey/          web backends plus bounded macOS capability mapping
 adapters/webdriverclassic/  existing W3C WebDriver session attachment
 adapters/safarimcp/         caller-owned Safari MCP relay attachment
 pkg/browser-ext/           single-build WXT runtime with optional Xallet Spook activation
+pkg/macos-cymonkey-helper/  caller-owned Swift Apple Events/Accessibility binding
 pkg/threejs-pacman/         explicit-registration Three.js Pacman runtime
 pkg/                        distributable Godot, Unity, and Unreal Pacman packages
 tests/godot-pacman-fixture/ license-free Godot conformance project
