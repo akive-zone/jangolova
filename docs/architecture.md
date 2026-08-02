@@ -4,8 +4,9 @@ Unity and Unreal semantic presentation use the [Pacman boundary](pacman.md):
 Jangolova dials a caller-owned semantic endpoint while the engine keeps
 rendering and the supervisor separately owns target and display lifecycle.
 
-Jangolova owns interaction and presentation engines. Xallet, a native host, or
-another operator owns the target runtimes with which those engines interact.
+Jangolova owns its Grimlock agent subsystem plus interaction and presentation
+engines. Xallet, a native host, or another operator owns the target runtimes
+with which those engines interact.
 
 Interaction includes operating semantic browser/application interfaces and
 requesting display-level pointer/keyboard actions. Presentation includes
@@ -15,11 +16,14 @@ protocol while target runtime and display ownership remain external.
 ## System boundary
 
 ```text
-Agent or application
+User, agent, IDE, or application
         |
-        | semantic interaction calls
-        v
-Jangolova interaction provider
+        +-- deterministic engine API -----------------+
+        |                                             |
+        +-- HTTP / MCP / ACP / A2A --> Grimlock ------+
+                                      model + policy  |
+                                                    v
+                                      Jangolova interaction core
         |
         +-- Playwright ------------------ CDP -------+
         +-- Puppeteer ---------------- CDP / BiDi ---+
@@ -95,6 +99,7 @@ cmd/jangolova/              CLI and authenticated provider
 internal/engineprovider/    target-in / semantic-call protocol
 internal/orchestrator/      interaction lifecycle and target contracts
 internal/bridge/            engine-neutral semantic methods
+internal/grimlock/          ADK agents and caller-supplied model connectors
 adapters/browserautomation/ Playwright CDP and Puppeteer CDP/BiDi attachment
 adapters/webdriverclassic/  existing W3C WebDriver session attachment
 adapters/safarimcp/         caller-owned Safari MCP relay attachment

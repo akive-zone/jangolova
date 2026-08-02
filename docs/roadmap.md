@@ -1,5 +1,20 @@
 # Roadmap
 
+## Phase 0: Grimlock agent interface
+
+- [x] Define Grimlock as Jangolova's internal model-powered agent subsystem,
+  distinct from deterministic engine APIs and target lifecycle ownership.
+- [x] Define a separate caller-supplied model profile with opaque credential
+  and TLS references.
+- [x] Add the ADK Go agent factory, model-connector registry, and initial
+  OpenAI-compatible gateway connector.
+- [x] Adapt Jangolova capabilities into effect-classified ADK tools with
+  approval checks immediately before execution.
+- [ ] Add the native Grimlock HTTP session/run/event API.
+- [ ] Add MCP, ACP, and A2A adapters over the same Grimlock application service.
+- [ ] Add persistent agent sessions, budgets, tracing, and multi-agent
+  workflows.
+
 ## Phase 1: Correct interaction boundary
 
 - [x] Accept caller-owned target endpoints and opaque handles.

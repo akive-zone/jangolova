@@ -113,7 +113,7 @@ var forbiddenSourceFragments = []string{
 
 func forbiddenPathComponent(name string) bool {
 	switch strings.ToLower(name) {
-	case "controller", "controllers", "connector", "connectors", "grimlock",
+	case "controller", "controllers", "connector", "connectors",
 		"placement", "session", "sessions", "surface", "surfaces", "vnc",
 		"webrtc", "xallet", "xpost", "xvfb":
 		return true

@@ -8,6 +8,12 @@ Its product goal has two equal parts: operate existing interfaces—including
 clicking and typing through semantic or display-level contracts—and create
 dynamic 2D/3D interfaces that agents can present and update.
 
+Grimlock is Jangolova's model-powered agent subsystem. It accepts a
+caller-supplied model gateway and opaque credentials, then turns approved
+Jangolova capabilities into effect-aware agent tools. HTTP, MCP, ACP, and A2A
+sit at its northbound boundary. Deterministic callers can continue using the
+engine API directly.
+
 Jangolova does not provision Chromium, native applications, displays,
 containers, VMs, networking, or credentials. Xallet owns those concerns when
 the products run together; a native user or another operator can provide the
@@ -87,6 +93,7 @@ targets solely to verify attachment portability.
 
 See [Architecture](docs/architecture.md), [Interaction provider](docs/engine-provider.md),
 [Deployment modes](docs/deployment-modes.md), [Bridge protocol](docs/bridge-protocol.md),
+[Grimlock agent subsystem](docs/grimlock.md),
 [Pacman](docs/pacman.md),
 [interface creation and operation](docs/interface-model.md),
 [caller-supplied targets](docs/target-descriptor.md),
