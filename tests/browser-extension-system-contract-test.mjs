@@ -57,5 +57,5 @@ test("popup reports the single distribution and live Xallet Spook state", async 
   const runtime = await source("pkg/browser-ext/src/runtime.ts");
   assert.match(popup, /jangolova\.extension\.control/);
   assert.match(popup, /xalletSpook/);
-  assert.match(runtime, /integrations: \{ xalletSpook: \{ status: xalletSpook \} \}/);
+  assert.match(runtime, /integrations: \{ xalletSpook: \{ status: xalletSpook \}, outboundControl: \{ status: outboundControl \} \}/);
 });

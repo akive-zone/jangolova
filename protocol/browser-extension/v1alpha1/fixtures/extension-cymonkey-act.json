@@ -1,0 +1,12 @@
+{
+  "type": "JANGOLOVA_EXTENSION_CALL",
+  "id": "current-1",
+  "method": "cymonkey.call",
+  "params": {
+    "method": "act",
+    "params": {
+      "name": "dom.query",
+      "input": {"selector": "main"}
+    }
+  }
+}

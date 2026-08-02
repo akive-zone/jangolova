@@ -1,0 +1,21 @@
+{
+  "type": "JANGOLOVA_EXTENSION_CALL",
+  "id": "policy-1",
+  "method": "policy.replace",
+  "params": {
+    "policy": {
+      "version": 1,
+      "defaultDecision": "deny",
+      "rules": [
+        {
+          "id": "allow-example-overlays",
+          "decision": "allow",
+          "callers": ["authenticated-websocket"],
+          "capabilities": ["overlay.*"],
+          "effects": ["write"],
+          "origins": ["https://example.com"]
+        }
+      ]
+    }
+  }
+}
