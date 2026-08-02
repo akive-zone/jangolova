@@ -1,6 +1,6 @@
 import { privilegedCapabilityNames } from '../src/capabilities';
 import { dispatchCymonkey } from '../src/engine';
-import { dispatchJangolova } from '../src/runtime';
+import { dispatchJangolova, setXalletSpookStatus } from '../src/runtime';
 import { publishCymonkeyEvent } from '../src/services/events';
 import { isExtensionControlCall } from '../src/services/policy';
 import { errorMessage, isRecord, type XalletSpookState } from '../src/types';
@@ -18,7 +18,11 @@ export default defineBackground(() => {
     'Jangolova Browser Extension',
     state,
     'popup.html',
-    (xalletSpook) => { state = { ...state, xalletSpook }; },
+    (xalletSpook) => {
+      state = { ...state, xalletSpook };
+      setXalletSpookStatus(xalletSpook);
+    },
+    browser,
   );
   spook.start();
 

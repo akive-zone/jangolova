@@ -13,6 +13,7 @@
     "test:browser-worker": "node --test tests/browser-worker-contract-test.mjs",
     "test:cymonkey": "node --test tests/cymonkey-contract-test.mjs",
     "test:browser-extension": "node --test tests/browser-extension-system-contract-test.mjs",
+    "test:xallet-spook": "node --test tests/xallet-spook-client-test.mjs",
     "test:threejs-pacman": "pkg/browser-ext/node_modules/.bin/tsc -p pkg/threejs-pacman/tsconfig.json && node --test tests/threejs-pacman-test.mjs",
     "test:cymonkey:live:cdp": "docker compose -f tests/docker/compose.yaml run --rm --entrypoint tests/docker/browser-interaction-smoke-test.sh engine-test",
     "test:cymonkey:live:bidi": "docker compose -f tests/docker/compose.yaml run --rm --entrypoint tests/docker/firefox-bidi-smoke-test.sh engine-test",

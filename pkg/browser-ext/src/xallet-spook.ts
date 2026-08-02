@@ -2,6 +2,11 @@ import type { XalletSpookState } from './types';
 
 const hubName = 'Xallet Hub';
 
+export type XalletSpookBrowser = {
+  management: { getAll(): Promise<Array<{ id?: string; name: string; enabled: boolean }>> };
+  runtime: { sendMessage(extensionId: string, message: unknown): Promise<unknown> };
+};
+
 export class XalletSpookClient {
   private hubId: string | null = null;
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -11,11 +16,12 @@ export class XalletSpookClient {
     private state: XalletSpookState,
     private readonly uiPath: string,
     private readonly onStatus: (status: XalletSpookState['xalletSpook']) => void = () => undefined,
+    private readonly api: XalletSpookBrowser,
   ) {}
 
   start() {
-    void this.discover();
-    this.timer = setInterval(() => void this.discover(), 10_000);
+    void this.probe();
+    this.timer = setInterval(() => void this.probe(), 10_000);
   }
 
   stop() {
@@ -31,7 +37,7 @@ export class XalletSpookClient {
     this.state = state;
     if (!this.hubId) return;
     try {
-      await browser.runtime.sendMessage(this.hubId, {
+      await this.api.runtime.sendMessage(this.hubId, {
         type: 'UPDATE_SPOKE_STATE',
         payload: state,
       });
@@ -41,26 +47,26 @@ export class XalletSpookClient {
     }
   }
 
-  private async discover() {
+  async probe() {
     try {
-      const extensions = await browser.management.getAll();
+      const extensions = await this.api.management.getAll();
       const hub = extensions.find((extension) => extension.name === hubName && extension.enabled);
       if (!hub?.id) {
         this.hubId = null;
         this.setStatus('unavailable');
         return;
       }
-      if (hub.id === this.hubId) return;
-      this.hubId = hub.id;
-      this.setStatus('connected');
-      await browser.runtime.sendMessage(hub.id, {
+      const connectedState = { ...this.state, xalletSpook: 'connected' as const };
+      await this.api.runtime.sendMessage(hub.id, {
         type: 'REGISTER_SPOKE',
         payload: {
           name: this.name,
-          initialState: this.state,
+          initialState: connectedState,
           uiPath: this.uiPath,
         },
       });
+      this.hubId = hub.id;
+      this.setStatus('connected');
     } catch {
       this.hubId = null;
       this.setStatus('unavailable');

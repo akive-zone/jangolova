@@ -47,3 +47,11 @@ test("private control plane keeps the legacy Cymonkey alias", async () => {
   assert.match(control, /jangolovaExtensionDispatch/);
   assert.match(control, /cymonkeyDispatch/);
 });
+
+test("popup reports the single distribution and live Xallet Spook state", async () => {
+  const popup = await source("pkg/browser-ext/entrypoints/popup/main.ts");
+  const runtime = await source("pkg/browser-ext/src/runtime.ts");
+  assert.match(popup, /jangolova\.extension\.control/);
+  assert.match(popup, /xalletSpook/);
+  assert.match(runtime, /integrations: \{ xalletSpook: \{ status: xalletSpook \} \}/);
+});

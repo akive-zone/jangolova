@@ -4,6 +4,12 @@ import { readEvents } from './services/events';
 import { callPacman } from './services/pacman';
 import { isRecord } from './types';
 
+let xalletSpook: 'discovering' | 'unavailable' | 'connected' = 'discovering';
+
+export function setXalletSpookStatus(status: typeof xalletSpook) {
+  xalletSpook = status;
+}
+
 export async function dispatchJangolova(method: string, params: Record<string, unknown> = {}) {
   if (method === 'hello') return hello();
   if (method === 'capabilities') return capabilities();
@@ -39,5 +45,6 @@ async function describe() {
     extensionId: browser.runtime.id,
     distribution: 'single-build',
     subsystems: { cymonkey: true, pacman: true },
+    integrations: { xalletSpook: { status: xalletSpook } },
   };
 }

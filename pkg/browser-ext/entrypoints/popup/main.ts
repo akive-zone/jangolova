@@ -1,20 +1,24 @@
 const statusElement = requireElement('status');
 
-void browser.runtime.sendMessage({
-  channel: 'jangolova.cymonkey.control',
-  method: 'describe',
-  params: {},
-}).then((value) => {
-  const description = value as {
-    extension?: { mode?: string; browser?: string };
+void Promise.all([
+  browser.runtime.sendMessage({ channel: 'jangolova.cymonkey.control', method: 'describe', params: {} }),
+  browser.runtime.sendMessage({ channel: 'jangolova.extension.control', method: 'describe', params: {} }),
+]).then(([cymonkeyValue, extensionValue]) => {
+  const cymonkey = cymonkeyValue as {
+    extension?: { browser?: string };
     registeredScripts?: string[];
     dynamicRuleIds?: number[];
   };
+  const extension = extensionValue as {
+    distribution?: string;
+    integrations?: { xalletSpook?: { status?: string } };
+  };
   statusElement.textContent = 'Ready';
-  requireElement('mode').textContent = description.extension?.mode || 'standalone';
-  requireElement('browser').textContent = description.extension?.browser || 'unknown';
-  requireElement('scripts').textContent = String(description.registeredScripts?.length || 0);
-  requireElement('rules').textContent = String(description.dynamicRuleIds?.length || 0);
+  requireElement('distribution').textContent = extension.distribution || 'single-build';
+  requireElement('spook').textContent = extension.integrations?.xalletSpook?.status || 'unavailable';
+  requireElement('browser').textContent = cymonkey.extension?.browser || 'unknown';
+  requireElement('scripts').textContent = String(cymonkey.registeredScripts?.length || 0);
+  requireElement('rules').textContent = String(cymonkey.dynamicRuleIds?.length || 0);
 }).catch((error) => {
   statusElement.textContent = error instanceof Error ? error.message : String(error);
 });

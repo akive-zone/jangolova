@@ -23,3 +23,9 @@ works standalone and also carries Xallet Spook support. When an enabled
 `Xallet Hub` is discovered, the extension registers with it and accepts
 privileged external calls only from that discovered hub ID. No separate Spook
 artifact or installation exists.
+
+The manifest currently permits external messages from extension IDs because
+Chrome and Firefox require that declaration before runtime dispatch. Calls are
+still rejected unless the sender ID exactly matches the enabled hub discovered
+through the management API. Replace the manifest wildcard with published,
+stable hub IDs when those IDs are fixed for every supported browser channel.
