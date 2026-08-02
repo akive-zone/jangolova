@@ -44,6 +44,9 @@ export const publishCymonkeyEvent = (type: string, data: Record<string, unknown>
 export const publishPacmanEvent = (type: string, data: Record<string, unknown> = {}, tabId?: number) =>
   appendEvent(`pacman.${type}`, data, tabId);
 
+export const publishAuditEvent = (phase: 'requested' | 'succeeded' | 'denied' | 'failed', data: Record<string, unknown>) =>
+  appendEvent(`audit.control.${phase}`, data);
+
 export async function readEvents(query: EventQuery = {}) {
   const cursor = Number.parseInt(query.after || '0', 10);
   if (!Number.isSafeInteger(cursor) || cursor < 0) {

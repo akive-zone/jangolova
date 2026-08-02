@@ -5,9 +5,14 @@ import { callPacman } from './services/pacman';
 import { isRecord } from './types';
 
 let xalletSpook: 'discovering' | 'unavailable' | 'connected' = 'discovering';
+let outboundControl: 'disabled' | 'connecting' | 'authenticating' | 'connected' | 'unavailable' = 'disabled';
 
 export function setXalletSpookStatus(status: typeof xalletSpook) {
   xalletSpook = status;
+}
+
+export function setOutboundControlStatus(status: typeof outboundControl) {
+  outboundControl = status;
 }
 
 export async function dispatchJangolova(method: string, params: Record<string, unknown> = {}) {
@@ -33,7 +38,10 @@ function hello() {
 
 function capabilities() {
   return {
-    platform: ['events.read', 'injection.packaged', 'network.rules', 'storage.scoped'],
+    platform: [
+      'events.read', 'audit.events', 'injection.packaged', 'network.rules',
+      'storage.scoped', 'policy.fine-grained', 'control.websocket.outbound',
+    ],
     cymonkey: privilegedCapabilityNames,
     pacman: ['pacman.call'],
   };
@@ -45,6 +53,6 @@ async function describe() {
     extensionId: browser.runtime.id,
     distribution: 'single-build',
     subsystems: { cymonkey: true, pacman: true },
-    integrations: { xalletSpook: { status: xalletSpook } },
+    integrations: { xalletSpook: { status: xalletSpook }, outboundControl: { status: outboundControl } },
   };
 }

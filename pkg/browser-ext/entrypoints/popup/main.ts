@@ -11,11 +11,12 @@ void Promise.all([
   };
   const extension = extensionValue as {
     distribution?: string;
-    integrations?: { xalletSpook?: { status?: string } };
+    integrations?: { xalletSpook?: { status?: string }; outboundControl?: { status?: string } };
   };
   statusElement.textContent = 'Ready';
   requireElement('distribution').textContent = extension.distribution || 'single-build';
   requireElement('spook').textContent = extension.integrations?.xalletSpook?.status || 'unavailable';
+  requireElement('outbound').textContent = extension.integrations?.outboundControl?.status || 'disabled';
   requireElement('browser').textContent = cymonkey.extension?.browser || 'unknown';
   requireElement('scripts').textContent = String(cymonkey.registeredScripts?.length || 0);
   requireElement('rules').textContent = String(cymonkey.dynamicRuleIds?.length || 0);

@@ -44,6 +44,7 @@ export type ActionRequest = {
 export type XalletSpookState = {
   status: 'ready' | 'running' | 'failed';
   xalletSpook: 'discovering' | 'unavailable' | 'connected';
+  outboundControl?: 'disabled' | 'connecting' | 'authenticating' | 'connected' | 'unavailable';
   browser: string;
   capabilities: string[];
   lastAction?: string;
