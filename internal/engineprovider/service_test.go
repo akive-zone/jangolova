@@ -17,9 +17,11 @@ import (
 )
 
 type fakeEngineAdapter struct {
+	mu           sync.Mutex
 	target       orchestrator.EngineTarget
 	spec         manifest.EngineSpec
 	instance     *fakeEngineInstance
+	instances    []*fakeEngineInstance
 	capabilities []string
 	callResult   string
 }
@@ -29,10 +31,19 @@ func (f *fakeEngineAdapter) Connect(
 	spec manifest.EngineSpec,
 	target orchestrator.EngineTarget,
 ) (orchestrator.EngineInstance, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.spec = spec
 	f.target = target
 	f.instance = &fakeEngineInstance{events: make(chan orchestrator.EngineEvent, 4), callResult: f.callResult}
+	f.instances = append(f.instances, f.instance)
 	return f.instance, nil
+}
+
+func (f *fakeEngineAdapter) snapshot() (orchestrator.EngineTarget, manifest.EngineSpec, *fakeEngineInstance, int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.target, f.spec, f.instance, len(f.instances)
 }
 
 func (f *fakeEngineAdapter) InspectEngine(context.Context) orchestrator.EngineInspection {
@@ -40,6 +51,7 @@ func (f *fakeEngineAdapter) InspectEngine(context.Context) orchestrator.EngineIn
 }
 
 type fakeEngineInstance struct {
+	mu           sync.Mutex
 	disconnected bool
 	events       chan orchestrator.EngineEvent
 	once         sync.Once
@@ -47,9 +59,17 @@ type fakeEngineInstance struct {
 }
 
 func (f *fakeEngineInstance) Disconnect(context.Context) error {
+	f.mu.Lock()
 	f.disconnected = true
+	f.mu.Unlock()
 	f.once.Do(func() { close(f.events) })
 	return nil
+}
+
+func (f *fakeEngineInstance) isDisconnected() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.disconnected
 }
 
 func (f *fakeEngineInstance) EngineEvents() <-chan orchestrator.EngineEvent { return f.events }
@@ -78,10 +98,131 @@ func (healthEngineInstance) EngineHealth(context.Context) orchestrator.EngineHea
 	return orchestrator.EngineHealth{Status: orchestrator.EngineHealthUnhealthy, Message: "fixture probe failed", ObservedAt: time.Now().UTC()}
 }
 
+type recoveringHealthAdapter struct {
+	mu       sync.Mutex
+	attempts int
+}
+
+type recoveringHealthInstance struct {
+	healthy bool
+}
+
+func (f *recoveringHealthAdapter) Connect(context.Context, manifest.EngineSpec, orchestrator.EngineTarget) (orchestrator.EngineInstance, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.attempts++
+	return &recoveringHealthInstance{healthy: f.attempts > 1}, nil
+}
+
+func (f *recoveringHealthAdapter) attemptCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.attempts
+}
+
+func (*recoveringHealthInstance) Disconnect(context.Context) error { return nil }
+func (f *recoveringHealthInstance) EngineHealth(context.Context) orchestrator.EngineHealth {
+	status := orchestrator.EngineHealthUnhealthy
+	if f.healthy {
+		status = orchestrator.EngineHealthHealthy
+	}
+	return orchestrator.EngineHealth{Status: status, Message: "fixture health", ObservedAt: time.Now().UTC()}
+}
+
 type leakingEngineAdapter struct{}
 
 func (leakingEngineAdapter) Connect(context.Context, manifest.EngineSpec, orchestrator.EngineTarget) (orchestrator.EngineInstance, error) {
 	return nil, errors.New("remote handshake echoed Bearer resolved-secret")
+}
+
+type recoveringEngineAdapter struct {
+	mu        sync.Mutex
+	attempts  int
+	targetIDs []string
+	instances []*fakeEngineInstance
+}
+
+func (f *recoveringEngineAdapter) Connect(
+	_ context.Context,
+	_ manifest.EngineSpec,
+	target orchestrator.EngineTarget,
+) (orchestrator.EngineInstance, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.attempts++
+	f.targetIDs = append(f.targetIDs, target.TargetID)
+	if f.attempts == 2 {
+		return nil, errors.New("target relay is not ready")
+	}
+	instance := &fakeEngineInstance{events: make(chan orchestrator.EngineEvent, 4)}
+	f.instances = append(f.instances, instance)
+	return instance, nil
+}
+
+func (f *recoveringEngineAdapter) snapshot() (int, []string, []*fakeEngineInstance) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.attempts, append([]string(nil), f.targetIDs...), append([]*fakeEngineInstance(nil), f.instances...)
+}
+
+func TestServiceReattachesFailedEngineWithoutSupervisingTarget(t *testing.T) {
+	registry := orchestrator.NewRegistry()
+	adapter := &recoveringEngineAdapter{}
+	if err := registry.RegisterEngine("recovering", adapter); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(registry, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.recoveryInitialBackoff = time.Millisecond
+	service.recoveryMaximumBackoff = 2 * time.Millisecond
+
+	response := performRequest(service.Routes(), http.MethodPost, "/v1/instances", `{
+		"apiVersion":"interaction.engine/v1alpha1","instanceId":"recover-one",
+		"engine":{"adapter":"recovering"},
+		"target":{"apiVersion":"interaction.target/v1alpha1","targetId":"caller-target-42","kind":"unity"}
+	}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("connect status = %d: %s", response.Code, response.Body.String())
+	}
+	_, _, instances := adapter.snapshot()
+	instances[0].events <- orchestrator.EngineEvent{
+		Type: "interaction.failed", Status: "failed", Message: "relay exited", OccurredAt: time.Now().UTC(),
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		response = performRequest(service.Routes(), http.MethodGet, "/v1/instances/recover-one/events", "")
+		var batch InstanceEventBatch
+		if err := json.NewDecoder(response.Body).Decode(&batch); err != nil {
+			t.Fatal(err)
+		}
+		if hasEventType(batch.Events, "instance.recovery.retrying") && hasEventType(batch.Events, "instance.recovered") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("recovery events not observed: %#v", batch.Events)
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	attempts, targetIDs, instances := adapter.snapshot()
+	if attempts != 3 || len(instances) != 2 {
+		t.Fatalf("connect attempts = %d, instances = %d", attempts, len(instances))
+	}
+	for _, targetID := range targetIDs {
+		if targetID != "caller-target-42" {
+			t.Fatalf("recovery changed target identity: %#v", targetIDs)
+		}
+	}
+	if !instances[0].isDisconnected() {
+		t.Fatal("failed attachment was not released")
+	}
+	response = performRequest(service.Routes(), http.MethodDelete, "/v1/instances/recover-one", "")
+	if response.Code != http.StatusNoContent || !instances[1].isDisconnected() {
+		t.Fatalf("disconnect status = %d, recovered attachment still active", response.Code)
+	}
 }
 
 func TestServiceRedactsResolvedCredentialFromAdapterFailure(t *testing.T) {
@@ -177,11 +318,12 @@ func TestServiceConnectsCallsAndDisconnectsEngine(t *testing.T) {
 	if instance.InstanceID != "browser-one" || instance.Status != "connected" || len(instance.Capabilities) != 2 {
 		t.Fatalf("instance = %#v", instance)
 	}
-	if len(adapter.target.Endpoints) != 1 || adapter.target.Endpoints[0].URL != "http://127.0.0.1:9222" {
-		t.Fatalf("target = %#v", adapter.target)
+	target, _, initialInstance, _ := adapter.snapshot()
+	if len(target.Endpoints) != 1 || target.Endpoints[0].URL != "http://127.0.0.1:9222" {
+		t.Fatalf("target = %#v", target)
 	}
-	if adapter.target.Handles["native.window"] != "window-1234" {
-		t.Fatalf("handles = %#v", adapter.target.Handles)
+	if target.Handles["native.window"] != "window-1234" {
+		t.Fatalf("handles = %#v", target.Handles)
 	}
 
 	response = performRequest(handler, http.MethodPost, "/v1/instances/browser-one/call", `{"method":"describe","params":{}}`)
@@ -196,7 +338,7 @@ func TestServiceConnectsCallsAndDisconnectsEngine(t *testing.T) {
 		t.Fatalf("call = %#v", call)
 	}
 
-	adapter.instance.events <- orchestrator.EngineEvent{Type: "interaction.failed", Status: "failed", Message: "fixture exited", OccurredAt: time.Now().UTC()}
+	initialInstance.events <- orchestrator.EngineEvent{Type: "interaction.failed", Status: "failed", Message: "fixture exited", OccurredAt: time.Now().UTC()}
 	deadline := time.Now().Add(time.Second)
 	for {
 		response = performRequest(handler, http.MethodGet, "/v1/instances/browser-one/events?after=2", "")
@@ -204,10 +346,7 @@ func TestServiceConnectsCallsAndDisconnectsEngine(t *testing.T) {
 		if err := json.NewDecoder(response.Body).Decode(&batch); err != nil {
 			t.Fatal(err)
 		}
-		if len(batch.Events) == 1 {
-			if batch.Events[0].Type != "interaction.failed" || batch.Cursor != "3" {
-				t.Fatalf("events = %#v", batch)
-			}
+		if hasEventType(batch.Events, "interaction.failed") && hasEventType(batch.Events, "instance.recovered") {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -220,7 +359,11 @@ func TestServiceConnectsCallsAndDisconnectsEngine(t *testing.T) {
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("disconnect status = %d", response.Code)
 	}
-	if !adapter.instance.disconnected {
+	_, _, recoveredInstance, attempts := adapter.snapshot()
+	if attempts < 2 {
+		t.Fatalf("connect attempts = %d, want recovery", attempts)
+	}
+	if !initialInstance.isDisconnected() || !recoveredInstance.isDisconnected() {
 		t.Fatal("interaction engine was not disconnected")
 	}
 }
@@ -298,16 +441,18 @@ func TestServiceAutomaticallySelectsEngineFromCallerSuppliedTarget(t *testing.T)
 	if connected.Adapter != "web-presentation" {
 		t.Fatalf("selected adapter = %q", connected.Adapter)
 	}
-	if playwright.instance != nil {
+	_, _, playwrightInstance, _ := playwright.snapshot()
+	if playwrightInstance != nil {
 		t.Fatal("non-matching engine was connected")
 	}
-	if presentation.spec.Adapter != "web-presentation" || len(presentation.spec.RequiredCapabilities) != 1 {
-		t.Fatalf("selected spec = %#v", presentation.spec)
+	presentationTarget, presentationSpec, _, _ := presentation.snapshot()
+	if presentationSpec.Adapter != "web-presentation" || len(presentationSpec.RequiredCapabilities) != 1 {
+		t.Fatalf("selected spec = %#v", presentationSpec)
 	}
-	if presentation.target.TargetID != "remote-browser-42" || presentation.target.APIVersion != TargetAPIVersion {
-		t.Fatalf("target identity = %#v", presentation.target)
+	if presentationTarget.TargetID != "remote-browser-42" || presentationTarget.APIVersion != TargetAPIVersion {
+		t.Fatalf("target identity = %#v", presentationTarget)
 	}
-	endpoint := presentation.target.Endpoints[0]
+	endpoint := presentationTarget.Endpoints[0]
 	if endpoint.URL != "wss://browser.example/control/42" || endpoint.CredentialRef != "browser-session-42" || endpoint.TLSRef != "browser-cluster-ca" || endpoint.Metadata["network.scope"] != "private" {
 		t.Fatalf("forwarded endpoint = %#v", endpoint)
 	}
@@ -391,6 +536,55 @@ func TestServiceActivelyProbesInstanceHealth(t *testing.T) {
 	}
 }
 
+func TestServiceRecoversAfterRepeatedUnhealthyProbes(t *testing.T) {
+	registry := orchestrator.NewRegistry()
+	adapter := &recoveringHealthAdapter{}
+	if err := registry.RegisterEngine("health-recovery", adapter); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(registry, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.recoveryInitialBackoff = time.Millisecond
+	response := performRequest(service.Routes(), http.MethodPost, "/v1/instances", `{
+		"apiVersion":"interaction.engine/v1alpha1","instanceId":"health-recovery-one",
+		"engine":{"adapter":"health-recovery"},"target":{"kind":"browser"}
+	}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("connect status = %d: %s", response.Code, response.Body.String())
+	}
+	for probe := 0; probe < 2; probe++ {
+		response = performRequest(service.Routes(), http.MethodGet, "/v1/instances/health-recovery-one", "")
+		if response.Code != http.StatusOK {
+			t.Fatalf("health status = %d: %s", response.Code, response.Body.String())
+		}
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		response = performRequest(service.Routes(), http.MethodGet, "/v1/instances/health-recovery-one/events", "")
+		var batch InstanceEventBatch
+		if err := json.NewDecoder(response.Body).Decode(&batch); err != nil {
+			t.Fatal(err)
+		}
+		if hasEventType(batch.Events, "instance.recovered") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("health recovery not observed: %#v", batch.Events)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if adapter.attemptCount() != 2 {
+		t.Fatalf("connect attempts = %d", adapter.attemptCount())
+	}
+	response = performRequest(service.Routes(), http.MethodDelete, "/v1/instances/health-recovery-one", "")
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("disconnect status = %d", response.Code)
+	}
+}
+
 func TestValidateConnectRequestRejectsInvalidTargets(t *testing.T) {
 	t.Parallel()
 	base := ConnectRequest{APIVersion: APIVersion, InstanceID: "engine-one", Engine: EngineSpec{Adapter: "playwright"}, Target: Target{Kind: "browser"}}
@@ -430,4 +624,13 @@ func performRequest(handler http.Handler, method, path, body string) *httptest.R
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response
+}
+
+func hasEventType(events []InstanceEvent, eventType string) bool {
+	for _, event := range events {
+		if event.Type == eventType {
+			return true
+		}
+	}
+	return false
 }

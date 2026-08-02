@@ -65,6 +65,9 @@ redaction are documented in
 [target connection security](docs/target-connection-security.md).
 Credential leases renew HTTP requests and reconnect CDP/BiDi workers without
 replacing the interaction instance or caller-owned runtime.
+Failed adapter attachments are re-created against the same caller-owned target
+without restarting that target or replaying semantic actions; see
+[attachment recovery](docs/attachment-recovery.md).
 
 ## Ownership boundary
 

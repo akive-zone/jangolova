@@ -80,6 +80,9 @@
 - [ ] Add live CA and client-certificate transport rotation.
 - [ ] Extend per-capability policy hooks and audit records beyond the current
   presentation execute/capture path.
-- [ ] Add orphan recovery and reconnection.
+- [x] Reattach failed engine instances to the same caller-owned target with
+  bounded backoff and action-safe lifecycle events.
+- [ ] Add caller reconciliation fixtures for rebuilding desired interaction
+  instances after the Jangolova provider process restarts.
 - [ ] Add generated protocol clients and compatibility fixtures.
 - [ ] Sign and publish versioned interaction-runtime images.

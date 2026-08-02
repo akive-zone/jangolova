@@ -26,24 +26,39 @@ var targetIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$`)
 
 const eventHistoryLimit = 256
 
+const (
+	defaultRecoveryInitialBackoff = 250 * time.Millisecond
+	defaultRecoveryMaximumBackoff = 10 * time.Second
+	defaultRecoveryConnectTimeout = 30 * time.Second
+)
+
 type Service struct {
-	mu        sync.Mutex
-	registry  *orchestrator.Registry
-	token     string
-	resolver  targetconn.Resolver
-	instances map[string]*runningInstance
+	mu                     sync.Mutex
+	registry               *orchestrator.Registry
+	token                  string
+	resolver               targetconn.Resolver
+	instances              map[string]*runningInstance
+	recoveryInitialBackoff time.Duration
+	recoveryMaximumBackoff time.Duration
+	recoveryConnectTimeout time.Duration
 }
 
 type runningInstance struct {
-	adapter    string
-	status     string
-	health     Health
-	instance   orchestrator.EngineInstance
-	release    func(context.Context) error
-	redact     func(string) string
-	redactJSON func(json.RawMessage) json.RawMessage
-	events     []InstanceEvent
-	nextEvent  uint64
+	adapter        string
+	status         string
+	health         Health
+	instance       orchestrator.EngineInstance
+	engine         orchestrator.EngineAdapter
+	spec           manifest.EngineSpec
+	target         orchestrator.EngineTarget
+	release        func(context.Context) error
+	redact         func(string) string
+	redactJSON     func(json.RawMessage) json.RawMessage
+	recoveryCancel context.CancelFunc
+	recoveryDone   chan struct{}
+	healthFailures int
+	events         []InstanceEvent
+	nextEvent      uint64
 }
 
 type ServiceOption func(*Service)
@@ -60,10 +75,13 @@ func NewService(registry *orchestrator.Registry, token string, options ...Servic
 		return nil, errors.New("engine provider token is required")
 	}
 	service := &Service{
-		registry:  registry,
-		token:     token,
-		resolver:  targetconn.DefaultResolver(),
-		instances: make(map[string]*runningInstance),
+		registry:               registry,
+		token:                  token,
+		resolver:               targetconn.DefaultResolver(),
+		instances:              make(map[string]*runningInstance),
+		recoveryInitialBackoff: defaultRecoveryInitialBackoff,
+		recoveryMaximumBackoff: defaultRecoveryMaximumBackoff,
+		recoveryConnectTimeout: defaultRecoveryConnectTimeout,
 	}
 	for _, option := range options {
 		if option != nil {
@@ -219,12 +237,13 @@ func (s *Service) handleInstances(w http.ResponseWriter, r *http.Request) {
 	record.redact = func(message string) string { return targetconn.RedactString(message, preparedTarget) }
 	record.redactJSON = func(value json.RawMessage) json.RawMessage { return targetconn.RedactJSON(value, preparedTarget) }
 	s.mu.Unlock()
-	instance, err := adapter.Connect(r.Context(), manifest.EngineSpec{
+	spec := manifest.EngineSpec{
 		Adapter:              adapterName,
 		RequiredCapabilities: append([]string(nil), request.Engine.RequiredCapabilities...),
 		Source:               request.Engine.Source,
 		Options:              request.Engine.Options,
-	}, preparedTarget)
+	}
+	instance, err := adapter.Connect(r.Context(), spec, preparedTarget)
 	if err != nil {
 		err = targetconn.Redact(err, preparedTarget)
 		_ = release(context.Background())
@@ -249,6 +268,9 @@ func (s *Service) handleInstances(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	record.instance = instance
+	record.engine = adapter
+	record.spec = spec
+	record.target = preparedTarget
 	record.status = "connected"
 	record.health = Health{
 		Status:     orchestrator.EngineHealthHealthy,
@@ -263,7 +285,7 @@ func (s *Service) handleInstances(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 	if source, ok := instance.(orchestrator.EngineEventSource); ok {
 		if events := source.EngineEvents(); events != nil {
-			go s.watchInstanceEvents(request.InstanceID, record, events)
+			go s.watchInstanceEvents(request.InstanceID, record, instance, events)
 		}
 	}
 	writeJSON(w, http.StatusCreated, value)
@@ -318,6 +340,14 @@ func (s *Service) handleInstance(w http.ResponseWriter, r *http.Request) {
 			health.Message = record.redact(health.Message)
 		}
 		updateInstanceHealth(record, health)
+		if health.Status == orchestrator.EngineHealthUnhealthy {
+			record.healthFailures++
+			if record.healthFailures >= 2 {
+				s.beginRecoveryLocked(id, record, instance, health.Message)
+			}
+		} else {
+			record.healthFailures = 0
+		}
 		value := describeInstance(id, record)
 		s.mu.Unlock()
 		writeJSON(w, http.StatusOK, value)
@@ -328,6 +358,11 @@ func (s *Service) handleInstance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		record.status = "disconnecting"
+		if record.recoveryCancel != nil {
+			record.recoveryCancel()
+			record.recoveryCancel = nil
+		}
+		recoveryDone := record.recoveryDone
 		record.health = Health{
 			Status:     orchestrator.EngineHealthStopping,
 			Message:    "interaction engine is disconnecting",
@@ -343,8 +378,15 @@ func (s *Service) handleInstance(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
 		var err error
+		if recoveryDone != nil {
+			select {
+			case <-recoveryDone:
+			case <-ctx.Done():
+				err = errors.Join(err, errors.New("cancel interaction recovery: "+ctx.Err().Error()))
+			}
+		}
 		if instance != nil {
-			err = instance.Disconnect(ctx)
+			err = errors.Join(err, instance.Disconnect(ctx))
 		}
 		if record.redact != nil && err != nil {
 			err = errors.New(record.redact(err.Error()))
@@ -493,12 +535,13 @@ func (s *Service) handleInstanceCall(w http.ResponseWriter, r *http.Request, id 
 func (s *Service) watchInstanceEvents(
 	id string,
 	record *runningInstance,
+	instance orchestrator.EngineInstance,
 	events <-chan orchestrator.EngineEvent,
 ) {
 	for event := range events {
 		s.mu.Lock()
 		current, ok := s.instances[id]
-		if !ok || current != record {
+		if !ok || current != record || record.instance != instance {
 			s.mu.Unlock()
 			return
 		}
@@ -515,6 +558,11 @@ func (s *Service) watchInstanceEvents(
 				Status:     orchestrator.EngineHealthStopped,
 				ObservedAt: time.Now().UTC(),
 			}
+		} else if isUnexpectedTerminalStatus(event.Status) {
+			appendInstanceEvent(record, event)
+			s.beginRecoveryLocked(id, record, instance, event.Message)
+			s.mu.Unlock()
+			return
 		} else if event.Status != "" {
 			record.status = event.Status
 			if event.Status == "failed" {
@@ -533,24 +581,166 @@ func (s *Service) watchInstanceEvents(
 		appendInstanceEvent(record, event)
 		s.mu.Unlock()
 	}
+
+	s.mu.Lock()
+	current, ok := s.instances[id]
+	if ok && current == record && record.instance == instance && record.status == "connected" {
+		s.beginRecoveryLocked(id, record, instance, "interaction engine event stream closed")
+	}
+	s.mu.Unlock()
+}
+
+func isUnexpectedTerminalStatus(status string) bool {
+	switch status {
+	case "disconnected", "exited", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
+// beginRecoveryLocked preserves the desired interaction attachment while
+// replacing only Jangolova's failed adapter instance. It never launches,
+// restarts, stops, or otherwise supervises the caller-owned target.
+func (s *Service) beginRecoveryLocked(
+	id string,
+	record *runningInstance,
+	failed orchestrator.EngineInstance,
+	message string,
+) {
+	if record.status == "disconnecting" || record.status == "recovering" || record.engine == nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	record.recoveryCancel = cancel
+	record.recoveryDone = make(chan struct{})
+	record.status = "recovering"
+	record.health = Health{
+		Status:     orchestrator.EngineHealthStarting,
+		Message:    "reattaching interaction engine to caller-owned target",
+		ObservedAt: time.Now().UTC(),
+	}
+	record.healthFailures = 0
+	if record.redact != nil {
+		message = record.redact(message)
+	}
+	appendInstanceEvent(record, orchestrator.EngineEvent{
+		Type: "instance.recovering", Status: "recovering", Message: message,
+		OccurredAt: time.Now().UTC(),
+	})
+	go s.recoverInstance(ctx, id, record, failed)
+}
+
+func (s *Service) recoverInstance(
+	ctx context.Context,
+	id string,
+	record *runningInstance,
+	failed orchestrator.EngineInstance,
+) {
+	defer close(record.recoveryDone)
+	if failed != nil {
+		disconnectCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = failed.Disconnect(disconnectCtx)
+		cancel()
+	}
+
+	backoff := s.recoveryInitialBackoff
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		connectCtx, cancel := context.WithTimeout(ctx, s.recoveryConnectTimeout)
+		candidate, err := record.engine.Connect(connectCtx, record.spec, record.target)
+		cancel()
+		if err == nil && candidate == nil {
+			err = errors.New("interaction engine returned no instance")
+		}
+		if err == nil {
+			s.mu.Lock()
+			current, exists := s.instances[id]
+			if !exists || current != record || record.status != "recovering" || ctx.Err() != nil {
+				s.mu.Unlock()
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_ = candidate.Disconnect(cleanupCtx)
+				cleanupCancel()
+				return
+			}
+			record.instance = candidate
+			record.recoveryCancel = nil
+			record.status = "connected"
+			record.healthFailures = 0
+			record.health = Health{Status: orchestrator.EngineHealthHealthy, ObservedAt: time.Now().UTC()}
+			appendInstanceEvent(record, orchestrator.EngineEvent{
+				Type: "instance.recovered", Status: "connected", OccurredAt: time.Now().UTC(),
+			})
+			s.mu.Unlock()
+			if source, ok := candidate.(orchestrator.EngineEventSource); ok {
+				if events := source.EngineEvents(); events != nil {
+					go s.watchInstanceEvents(id, record, candidate, events)
+				}
+			}
+			return
+		}
+
+		message := err.Error()
+		if record.redact != nil {
+			message = record.redact(message)
+		}
+		s.mu.Lock()
+		current, exists := s.instances[id]
+		if !exists || current != record || record.status != "recovering" || ctx.Err() != nil {
+			s.mu.Unlock()
+			return
+		}
+		appendInstanceEvent(record, orchestrator.EngineEvent{
+			Type: "instance.recovery.retrying", Status: "recovering", Message: message,
+			OccurredAt: time.Now().UTC(),
+		})
+		s.mu.Unlock()
+
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		backoff *= 2
+		if backoff > s.recoveryMaximumBackoff {
+			backoff = s.recoveryMaximumBackoff
+		}
+	}
 }
 
 func (s *Service) Close(ctx context.Context) error {
 	s.mu.Lock()
 	type managedInstance struct {
-		instance orchestrator.EngineInstance
-		release  func(context.Context) error
-		redact   func(string) string
+		instance     orchestrator.EngineInstance
+		release      func(context.Context) error
+		redact       func(string) string
+		recoveryDone <-chan struct{}
 	}
 	values := make([]managedInstance, 0, len(s.instances))
 	for _, record := range s.instances {
-		values = append(values, managedInstance{instance: record.instance, release: record.release, redact: record.redact})
+		if record.recoveryCancel != nil {
+			record.recoveryCancel()
+			record.recoveryCancel = nil
+		}
+		values = append(values, managedInstance{instance: record.instance, release: record.release, redact: record.redact, recoveryDone: record.recoveryDone})
 	}
 	s.instances = make(map[string]*runningInstance)
 	s.mu.Unlock()
 	var problems []error
 	for index := len(values) - 1; index >= 0; index-- {
 		value := values[index]
+		if value.recoveryDone != nil {
+			select {
+			case <-value.recoveryDone:
+			case <-ctx.Done():
+				problems = append(problems, errors.New("cancel interaction recovery: "+ctx.Err().Error()))
+				continue
+			}
+		}
 		if value.instance != nil {
 			if err := value.instance.Disconnect(ctx); err != nil {
 				if value.redact != nil {
