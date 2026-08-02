@@ -8,7 +8,7 @@ import (
 )
 
 // APIVersion is the northbound Grimlock application contract. HTTP, MCP,
-// ACP, and A2A adapters should all map to this same session model.
+// ACP adapters should all map to this same session model.
 const APIVersion = "agent.grimlock/v1alpha1"
 
 // BindingSpec describes one caller-owned interaction target. The target

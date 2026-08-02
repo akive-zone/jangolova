@@ -21,6 +21,10 @@ func main() {
 		err = serveEngineProviderCommand(os.Args[2:])
 	case "serve-grimlock":
 		err = serveGrimlockCommand(os.Args[2:])
+	case "serve-grimlock-mcp":
+		err = serveGrimlockMCPCommand(os.Args[2:])
+	case "serve-grimlock-acp":
+		err = serveGrimlockACPCommand(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 		return
@@ -42,5 +46,7 @@ Commands:
   engines                 Discover interaction-engine adapters and availability
   connect-engine          Attach one engine to a caller-owned target
   serve-engine-provider   Serve the authenticated interaction-engine API
-  serve-grimlock           Serve the authenticated Grimlock agent API`)
+  serve-grimlock           Serve the authenticated Grimlock agent API
+  serve-grimlock-mcp       Serve Grimlock through MCP (stdio or HTTP)
+  serve-grimlock-acp       Serve Grimlock through ACP stdio`)
 }

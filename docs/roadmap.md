@@ -11,7 +11,8 @@
 - [x] Adapt Jangolova capabilities into effect-classified ADK tools with
   approval checks immediately before execution.
 - [x] Add the native Grimlock HTTP session/run/event API.
-- [ ] Add MCP, ACP, and A2A adapters over the same Grimlock application service.
+- [x] Add the MCP adapter over the same Grimlock application service.
+- [x] Add the ACP adapter over the same Grimlock application service.
 - [ ] Add persistent agent sessions, budgets, tracing, and multi-agent
   workflows.
 

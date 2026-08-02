@@ -44,7 +44,7 @@ User, agent, IDE, or application
         |
         +-- deterministic engine API -----------------+
         |                                             |
-        +-- HTTP / MCP / ACP / A2A --> Grimlock ------+
+        +-- HTTP / MCP / ACP --> Grimlock ------------+
                                       model + policy  |
                                                     v
                                       Jangolova interaction core

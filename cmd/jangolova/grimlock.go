@@ -32,20 +32,7 @@ func serveGrimlockCommand(args []string) error {
 	if flags.NArg() != 0 {
 		return errors.New("serve-grimlock accepts flags only")
 	}
-	token := strings.TrimSpace(os.Getenv("JANGOLOVA_GRIMLOCK_TOKEN"))
-	if token == "" {
-		return errors.New("JANGOLOVA_GRIMLOCK_TOKEN is required")
-	}
-	resolver := targetconn.DefaultResolver()
-	runtime, err := grimlock.NewDefaultRuntime(resolver)
-	if err != nil {
-		return err
-	}
-	registry, err := builtin.EngineRegistry()
-	if err != nil {
-		return err
-	}
-	service, err := grimlock.NewService(runtime, registry, token, grimlock.WithTargetResolver(resolver))
+	service, err := newGrimlockService()
 	if err != nil {
 		return err
 	}
@@ -68,4 +55,21 @@ func serveGrimlockCommand(args []string) error {
 		return fmt.Errorf("serve Grimlock: %w", err)
 	}
 	return nil
+}
+
+func newGrimlockService() (*grimlock.Service, error) {
+	token := strings.TrimSpace(os.Getenv("JANGOLOVA_GRIMLOCK_TOKEN"))
+	if token == "" {
+		return nil, errors.New("JANGOLOVA_GRIMLOCK_TOKEN is required")
+	}
+	resolver := targetconn.DefaultResolver()
+	runtime, err := grimlock.NewDefaultRuntime(resolver)
+	if err != nil {
+		return nil, err
+	}
+	registry, err := builtin.EngineRegistry()
+	if err != nil {
+		return nil, err
+	}
+	return grimlock.NewService(runtime, registry, token, grimlock.WithTargetResolver(resolver))
 }

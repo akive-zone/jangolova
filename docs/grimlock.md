@@ -5,14 +5,14 @@ Jangolova, alongside Cymonkey, Pacman, and the core interaction engine. It is
 not a separate product and it is not a target, display, or workload manager.
 
 Grimlock gives people, applications, IDEs, and other agents an agent-oriented
-way to use Jangolova. HTTP, MCP, ACP, A2A, and future protocols are adapters at
+way to use Jangolova. HTTP, MCP, ACP, and future protocols are adapters at
 its northbound boundary. Google Agent Development Kit (ADK) for Go supplies
 the model-neutral agent, tool, session, streaming, and workflow primitives.
 
 ```text
 user, application, IDE, or external agent
                   |
-          HTTP / MCP / ACP / A2A
+          HTTP / MCP / ACP
                   |
               Grimlock
      model + agent + policy + approvals
@@ -144,7 +144,6 @@ All northbound protocols map to one Grimlock application service:
 
 HTTP is the native application API. MCP exposes sessions and bounded
 Jangolova operations as tools/resources. ACP carries interactive client
-sessions. A2A is distinct from ACP and is used for agent-to-agent delegation.
 Protocol adapters must not duplicate model, policy, or tool-routing logic.
 
 ## Native HTTP API
@@ -204,8 +203,44 @@ Example shape (the endpoint and opaque references belong to the caller):
 ```
 
 The service keeps a bounded in-memory event history for the process lifetime.
-MCP, ACP, and A2A adapters should be layered over this same service and must
-not create a second agent runtime.
+MCP and ACP adapters are layered over this same service and must not create a
+second agent runtime.
+
+## MCP adapter
+
+`jangolova serve-grimlock-mcp` exposes the same service as MCP tools and
+resources. The default transport is line-delimited JSON-RPC over stdio; use
+`--bind host:port` for authenticated single-request Streamable HTTP at `/mcp`.
+
+The MCP tool surface is intentionally small and session-oriented:
+
+- `grimlock_connectors`
+- `grimlock_session_create`
+- `grimlock_session_run`
+- `grimlock_session_events`
+- `grimlock_session_confirm`
+- `grimlock_session_cancel`
+- `grimlock_session_close`
+
+`grimlock://connectors`, `grimlock://sessions/{sessionId}`, and the matching
+event resource template expose read-only state. MCP calls never create a
+second model runtime; they dispatch to the same session, approval, and target
+cleanup paths as HTTP.
+
+## ACP adapter
+
+`jangolova serve-grimlock-acp` implements ACP v1 over stdio for editors and
+other interactive clients. It supports `initialize`, `session/new`,
+`session/load`, `session/prompt`, `session/cancel`, `session/close`, and
+`session/update` notifications. Prompt content is text-only in this first
+slice.
+
+Because ACP's standard `session/new` request does not define Jangolova target
+attachments, the caller supplies them through the `agent`, `model`, and
+`bindings` extension fields (or the same fields under `_meta`). The caller's
+model gateway, credential references, and target descriptors remain opaque and
+caller-owned. A session is not created if those fields do not pass the same
+validation used by HTTP.
 
 ## Delivery sequence
 
@@ -215,8 +250,8 @@ not create a second agent runtime.
 3. Jangolova capability-to-ADK-tool adapter with effect-aware approvals.
 4. HTTP Grimlock session/run API and streaming events.
 5. MCP transport over the same service.
-6. ACP and A2A adapters over the same service.
+6. ACP adapter over the same service.
 7. Persistent session stores, quotas, tracing, and multi-agent workflows.
 
-The current implementation completes steps 1 through 4. MCP, ACP, and A2A will
-adapt this service rather than owning parallel runtimes.
+The current implementation completes steps 1 through 6. MCP and ACP adapt this
+service rather than owning parallel runtimes.

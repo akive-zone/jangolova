@@ -10,8 +10,8 @@ dynamic 2D/3D interfaces that agents can present and update.
 
 Grimlock is Jangolova's model-powered agent subsystem. It accepts a
 caller-supplied model gateway and opaque credentials, then turns approved
-Jangolova capabilities into effect-aware agent tools. HTTP, MCP, ACP, and A2A
-sit at its northbound boundary. Deterministic callers can continue using the
+Jangolova capabilities into effect-aware agent tools. HTTP, MCP, and ACP sit
+at its northbound boundary. Deterministic callers can continue using the
 engine API directly.
 
 Jangolova does not provision Chromium, native applications, displays,
@@ -104,6 +104,21 @@ jangolova serve-grimlock --bind 127.0.0.1:7392
 
 See [Grimlock](docs/grimlock.md) for the session, run, event, approval, and
 target-binding contract.
+
+Run the MCP adapter over stdio (the default) or Streamable HTTP:
+
+```bash
+export JANGOLOVA_GRIMLOCK_TOKEN="replace-with-a-random-secret"
+jangolova serve-grimlock-mcp
+jangolova serve-grimlock-mcp --bind 127.0.0.1:7393
+```
+
+Run the ACP adapter for an editor or other client over stdio:
+
+```bash
+export JANGOLOVA_GRIMLOCK_TOKEN="replace-with-a-random-secret"
+jangolova serve-grimlock-acp
+```
 
 Connection references, expiry, private certificate authorities, and output
 redaction are documented in
