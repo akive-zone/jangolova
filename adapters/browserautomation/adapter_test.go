@@ -3,6 +3,7 @@ package browserautomation
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -80,6 +81,45 @@ func TestAdapterReconnectsWorkerWhenCredentialRotates(t *testing.T) {
 		case <-deadline:
 			t.Fatal("credential rotation did not reconnect the worker")
 		}
+	}
+}
+
+func TestAdapterReplacesWorkerWhenTLSRotates(t *testing.T) {
+	worker, err := filepath.Abs("../../tests/connection-material-worker.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	options, _ := json.Marshal(map[string]string{"workerPath": worker})
+	connection := &orchestrator.EndpointConnection{
+		Headers: map[string]string{"Authorization": "Bearer fixture-secret"}, ExpiresAt: time.Now().Add(time.Minute),
+	}
+	connected, err := Playwright().Connect(context.Background(), manifest.EngineSpec{Options: options}, orchestrator.EngineTarget{
+		Kind: "browser", Endpoints: []orchestrator.TargetEndpoint{{
+			Name: "control", Protocol: "cdp", URL: "wss://browser.remote.example/devtools/browser/42", Connection: connection,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	caPath := filepath.Join(t.TempDir(), "rotated-ca.pem")
+	if err := os.WriteFile(caPath, []byte("fixture CA material"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	revision := connection.ReplaceTLS(&orchestrator.TLSConnection{CAFile: caPath}, time.Now().Add(2*time.Minute))
+	select {
+	case event := <-connected.(orchestrator.EngineEventSource).EngineEvents():
+		if event.Type != "interaction.connection.renewed" {
+			t.Fatalf("TLS rotation event = %#v", event)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("TLS rotation did not replace the worker")
+	}
+	_, acknowledged := connection.Acknowledgements()
+	if acknowledged < revision {
+		t.Fatalf("acknowledged revision = %d, want at least %d", acknowledged, revision)
+	}
+	if err := connected.Disconnect(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }
 

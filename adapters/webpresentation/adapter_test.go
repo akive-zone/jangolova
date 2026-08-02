@@ -1,7 +1,6 @@
 package webpresentation
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -81,6 +80,51 @@ func TestAdapterReconnectsWorkerWhenCredentialRotates(t *testing.T) {
 			}
 		case <-deadline:
 			t.Fatal("credential rotation did not reconnect the presentation worker")
+		}
+	}
+}
+
+func TestAdapterReplacesWorkerWhenTLSRotates(t *testing.T) {
+	worker, err := filepath.Abs("../../tests/connection-material-worker.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	options, _ := json.Marshal(map[string]any{"workerPath": worker})
+	connection := &orchestrator.EndpointConnection{
+		Headers: map[string]string{"Authorization": "Bearer fixture-secret"}, ExpiresAt: time.Now().Add(time.Minute),
+	}
+	connected, err := (Adapter{}).Connect(context.Background(), manifest.EngineSpec{Options: options}, orchestrator.EngineTarget{
+		Kind: "browser", Endpoints: []orchestrator.TargetEndpoint{{
+			Name: "control", Protocol: "cdp", URL: "wss://browser.remote.example/devtools/browser/42", Connection: connection,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	caPath := filepath.Join(t.TempDir(), "rotated-ca.pem")
+	if err := os.WriteFile(caPath, []byte("fixture CA material"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	revision := connection.ReplaceTLS(&orchestrator.TLSConnection{CAFile: caPath}, time.Now().Add(2*time.Minute))
+	for {
+		select {
+		case event := <-connected.(orchestrator.EngineEventSource).EngineEvents():
+			if event.Type == "presentation.connected" {
+				continue
+			}
+			if event.Type != "interaction.connection.renewed" {
+				t.Fatalf("TLS rotation event = %#v", event)
+			}
+			_, acknowledged := connection.Acknowledgements()
+			if acknowledged < revision {
+				t.Fatalf("acknowledged revision = %d, want at least %d", acknowledged, revision)
+			}
+			if err := connected.Disconnect(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			return
+		case <-time.After(5 * time.Second):
+			t.Fatal("TLS rotation did not replace the presentation worker")
 		}
 	}
 }
@@ -318,8 +362,7 @@ func TestSensitivePresentationActionsAreAuthorizedByPolicy(t *testing.T) {
 }
 
 func TestSensitivePresentationActionsEmitAuditEvents(t *testing.T) {
-	instance := testInstance(defaultPresentationPolicy())
-	instance.responses <- rpcResponse{ID: 1, Result: json.RawMessage(`{"ok":true}`)}
+	instance, _ := testInstance(defaultPresentationPolicy())
 	result, err := instance.Call(context.Background(), "act", json.RawMessage(`{"name":"presentation.execute","input":{"code":"return 1"}}`))
 	if err != nil {
 		t.Fatal(err)
@@ -334,14 +377,14 @@ func TestSensitivePresentationActionsEmitAuditEvents(t *testing.T) {
 func TestDeniedSensitivePresentationActionEmitsAuditEvent(t *testing.T) {
 	policy := defaultPresentationPolicy()
 	policy.AuthorizedActions = []string{"presentation.capture"}
-	instance := testInstance(policy)
+	instance, worker := testInstance(policy)
 	_, err := instance.Call(context.Background(), "act", json.RawMessage(`{"name":"presentation.execute","input":{"code":"return 1"}}`))
 	if err == nil {
 		t.Fatal("Call() error = nil")
 	}
 	assertAuditEvent(t, instance.events, "presentation.execute.requested")
 	assertAuditEvent(t, instance.events, "presentation.execute.denied")
-	if instance.stdin.(*testWriteCloser).Len() != 0 {
+	if worker.calls != 0 {
 		t.Fatal("denied action was sent to worker")
 	}
 }
@@ -349,7 +392,11 @@ func TestDeniedSensitivePresentationActionEmitsAuditEvent(t *testing.T) {
 func TestSensitivePresentationActionTimeoutCancelsRequest(t *testing.T) {
 	policy := defaultPresentationPolicy()
 	policy.ExecuteTimeoutMillis = 1
-	instance := testInstance(policy)
+	instance, worker := testInstance(policy)
+	worker.call = func(ctx context.Context, _ string, _ json.RawMessage) (json.RawMessage, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	_, err := instance.Call(context.Background(), "act", json.RawMessage(`{"name":"presentation.execute","input":{"code":"while(true){}"}}`))
 	if err == nil || !strings.Contains(err.Error(), "deadline") {
 		t.Fatalf("Call() error = %v", err)
@@ -358,19 +405,28 @@ func TestSensitivePresentationActionTimeoutCancelsRequest(t *testing.T) {
 	assertAuditEvent(t, instance.events, "presentation.execute.cancelled")
 }
 
-type testWriteCloser struct{ bytes.Buffer }
+type testWorker struct {
+	calls int
+	call  func(context.Context, string, json.RawMessage) (json.RawMessage, error)
+}
 
-func (w *testWriteCloser) Close() error { return nil }
+func (w *testWorker) Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	w.calls++
+	return w.call(ctx, method, params)
+}
+func (*testWorker) Disconnect(context.Context) error { return nil }
+func (*testWorker) Done() <-chan struct{}            { return make(chan struct{}) }
+func (*testWorker) WaitError() error                 { return nil }
+func (*testWorker) Terminate()                       {}
+func (*testWorker) StderrSuffix() string             { return "" }
 
-func testInstance(policy presentationPolicy) *instance {
+func testInstance(policy presentationPolicy) (*instance, *testWorker) {
+	worker := &testWorker{call: func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"ok":true}`), nil
+	}}
 	return &instance{
-		stdin:     &testWriteCloser{},
-		responses: make(chan rpcResponse, 1),
-		done:      make(chan error, 1),
-		events:    make(chan orchestrator.EngineEvent, 8),
-		stderr:    &lockedBuffer{},
-		policy:    policy,
-	}
+		worker: worker, events: make(chan orchestrator.EngineEvent, 8), policy: policy,
+	}, worker
 }
 
 func assertAuditEvent(t *testing.T, events <-chan orchestrator.EngineEvent, eventType string) {

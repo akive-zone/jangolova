@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -24,22 +25,17 @@ func HTTPClient(endpoint orchestrator.TargetEndpoint, timeout time.Duration) (*h
 	if err := Validate(endpoint); err != nil {
 		return nil, err
 	}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
 	snapshot := endpoint.Connection.Snapshot()
-	if snapshot.TLS != nil {
-		parsed, err := url.Parse(endpoint.URL)
-		if err != nil || parsed.Scheme != "https" {
-			return nil, errors.New("TLS connection material requires an https endpoint")
-		}
-		config, err := tlsConfig(snapshot.TLS)
-		if err != nil {
-			return nil, err
-		}
-		transport.TLSClientConfig = config
+	transport, err := httpTransport(endpoint.URL, snapshot.TLS)
+	if err != nil {
+		return nil, err
 	}
 	var roundTripper http.RoundTripper = transport
 	if endpoint.Connection != nil {
-		roundTripper = &materialTransport{base: transport, material: endpoint.Connection}
+		roundTripper = &materialTransport{
+			base: transport, endpointURL: endpoint.URL, material: endpoint.Connection,
+			activeTLSRevision: snapshot.TLSRevision,
+		}
 	}
 	return &http.Client{Timeout: timeout, Transport: roundTripper}, nil
 }
@@ -79,8 +75,12 @@ func Headers(endpoint orchestrator.TargetEndpoint) map[string]string {
 }
 
 type materialTransport struct {
-	base     http.RoundTripper
-	material *orchestrator.EndpointConnection
+	stateMu           sync.RWMutex
+	rotationMu        sync.Mutex
+	base              *http.Transport
+	endpointURL       string
+	material          *orchestrator.EndpointConnection
+	activeTLSRevision uint64
 }
 
 func (t *materialTransport) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -93,13 +93,75 @@ func (t *materialTransport) RoundTrip(request *http.Request) (*http.Response, er
 	for name, value := range snapshot.Headers {
 		cloned.Header.Set(name, value)
 	}
-	return t.base.RoundTrip(cloned)
+
+	t.stateMu.RLock()
+	if snapshot.TLSRevision == t.activeTLSRevision {
+		response, err := t.base.RoundTrip(cloned)
+		t.stateMu.RUnlock()
+		return response, err
+	}
+	t.stateMu.RUnlock()
+
+	// Only one request validates and promotes a TLS generation. The active
+	// transport remains available until the candidate completes a real request.
+	t.rotationMu.Lock()
+	defer t.rotationMu.Unlock()
+	snapshot = t.material.Snapshot()
+	if !snapshot.ExpiresAt.IsZero() && !snapshot.ExpiresAt.After(time.Now()) {
+		return nil, errors.New("target connection material has expired")
+	}
+	cloned = request.Clone(request.Context())
+	cloned.Header = request.Header.Clone()
+	for name, value := range snapshot.Headers {
+		cloned.Header.Set(name, value)
+	}
+	t.stateMu.RLock()
+	if snapshot.TLSRevision == t.activeTLSRevision {
+		response, err := t.base.RoundTrip(cloned)
+		t.stateMu.RUnlock()
+		return response, err
+	}
+	t.stateMu.RUnlock()
+	candidate, err := httpTransport(t.endpointURL, snapshot.TLS)
+	if err != nil {
+		return nil, err
+	}
+	response, err := candidate.RoundTrip(cloned)
+	if err != nil {
+		candidate.CloseIdleConnections()
+		return nil, err
+	}
+	t.stateMu.Lock()
+	previous := t.base
+	t.base = candidate
+	t.activeTLSRevision = snapshot.TLSRevision
+	t.stateMu.Unlock()
+	previous.CloseIdleConnections()
+	t.material.Acknowledge(snapshot.Revision)
+	return response, nil
 }
 
 func (t *materialTransport) CloseIdleConnections() {
-	if closer, ok := t.base.(interface{ CloseIdleConnections() }); ok {
-		closer.CloseIdleConnections()
+	t.stateMu.RLock()
+	t.base.CloseIdleConnections()
+	t.stateMu.RUnlock()
+}
+
+func httpTransport(endpointURL string, material *orchestrator.TLSConnection) (*http.Transport, error) {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if material == nil {
+		return transport, nil
 	}
+	parsed, err := url.Parse(endpointURL)
+	if err != nil || parsed.Scheme != "https" {
+		return nil, errors.New("TLS connection material requires an https endpoint")
+	}
+	config, err := tlsConfig(material)
+	if err != nil {
+		return nil, err
+	}
+	transport.TLSClientConfig = config
+	return transport, nil
 }
 
 func tlsConfig(material *orchestrator.TLSConnection) (*tls.Config, error) {

@@ -42,6 +42,8 @@ type EndpointConnection struct {
 	credentialExpiresAt time.Time
 	tlsExpiresAt        time.Time
 	revision            uint64
+	credentialRevision  uint64
+	tlsRevision         uint64
 	updates             chan uint64
 	acknowledged        uint64
 	acknowledgements    chan uint64
@@ -50,11 +52,13 @@ type EndpointConnection struct {
 }
 
 type EndpointConnectionSnapshot struct {
-	Headers      map[string]string
-	TLS          *TLSConnection
-	ExpiresAt    time.Time
-	Revision     uint64
-	SecretValues []string
+	Headers            map[string]string
+	TLS                *TLSConnection
+	ExpiresAt          time.Time
+	Revision           uint64
+	CredentialRevision uint64
+	TLSRevision        uint64
+	SecretValues       []string
 }
 
 func (c *EndpointConnection) Snapshot() EndpointConnectionSnapshot {
@@ -69,7 +73,9 @@ func (c *EndpointConnection) Snapshot() EndpointConnectionSnapshot {
 	}
 	return EndpointConnectionSnapshot{
 		Headers: cloneConnectionValues(c.Headers), TLS: cloneTLSConnection(c.TLS),
-		ExpiresAt: c.ExpiresAt, Revision: c.revision, SecretValues: secrets,
+		ExpiresAt: c.ExpiresAt, Revision: c.revision,
+		CredentialRevision: c.credentialRevision, TLSRevision: c.tlsRevision,
+		SecretValues: secrets,
 	}
 }
 
@@ -103,6 +109,7 @@ func (c *EndpointConnection) ReplaceCredential(headers map[string]string, expire
 	c.credentialExpiresAt = expiresAt
 	c.recomputeExpiryLocked()
 	c.revision++
+	c.credentialRevision++
 	c.notifyLocked()
 	revision := c.revision
 	c.mu.Unlock()
@@ -115,6 +122,7 @@ func (c *EndpointConnection) ReplaceTLS(material *TLSConnection, expiresAt time.
 	c.tlsExpiresAt = expiresAt
 	c.recomputeExpiryLocked()
 	c.revision++
+	c.tlsRevision++
 	c.notifyLocked()
 	revision := c.revision
 	c.mu.Unlock()
@@ -163,6 +171,8 @@ func (c *EndpointConnection) Clear() {
 	c.secretValues = nil
 	c.secretOrder = nil
 	c.revision++
+	c.credentialRevision++
+	c.tlsRevision++
 	c.notifyLocked()
 	c.mu.Unlock()
 }

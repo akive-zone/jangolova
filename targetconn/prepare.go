@@ -91,7 +91,7 @@ func PrepareWithOptions(ctx context.Context, resolver Resolver, target orchestra
 			}, material, connection, options)
 			lease.apply(material)
 			leases = append(leases, lease)
-			if item.kind == CredentialReference {
+			if !material.ExpiresAt.IsZero() {
 				lease.start()
 			}
 		}
@@ -181,11 +181,11 @@ func (l *materialLease) renew() bool {
 	previous := l.current
 	l.current = material
 	revision := l.apply(material)
-	if requiresConnectionAcknowledgement(l.request.Protocol) {
+	if requiresConnectionAcknowledgement(l.request.Kind, l.request.Protocol) {
 		l.pending[revision] = previous
 	}
 	l.mu.Unlock()
-	if requiresConnectionAcknowledgement(l.request.Protocol) {
+	if requiresConnectionAcknowledgement(l.request.Kind, l.request.Protocol) {
 		l.waitForAcknowledgement(revision, previous.ExpiresAt)
 		l.releasePending(revision)
 	} else {
@@ -257,7 +257,10 @@ func (l *materialLease) releasePending(revision uint64) {
 	}
 }
 
-func requiresConnectionAcknowledgement(protocol string) bool {
+func requiresConnectionAcknowledgement(kind ReferenceKind, protocol string) bool {
+	if kind == TLSReference {
+		return true
+	}
 	switch protocol {
 	case "cdp", "webdriver-bidi", "pacman-ws":
 		return true

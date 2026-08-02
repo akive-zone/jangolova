@@ -77,7 +77,8 @@
 
 - [x] Add renewable credential leases for HTTP and long-lived CDP/BiDi
   interactions.
-- [ ] Add live CA and client-certificate transport rotation.
+- [x] Add live CA and client-certificate transport rotation, with atomic HTTP
+  transport promotion and process-safe CDP worker replacement.
 - [ ] Extend per-capability policy hooks and audit records beyond the current
   presentation execute/capture path.
 - [x] Reattach failed engine instances to the same caller-owned target with

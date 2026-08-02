@@ -3,13 +3,11 @@
 package browserautomation
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -17,11 +15,11 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"jangolova/internal/bridge"
 	"jangolova/internal/manifest"
+	"jangolova/internal/nodeworker"
 	"jangolova/internal/orchestrator"
 	"jangolova/targetconn"
 )
@@ -40,53 +38,24 @@ type options struct {
 	WorkerPath string `json:"workerPath,omitempty"`
 }
 
-type rpcRequest struct {
-	ID     uint64          `json:"id"`
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params,omitempty"`
-}
-
-type rpcResponse struct {
-	ID     uint64          `json:"id"`
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  string          `json:"error,omitempty"`
-}
-
 type instance struct {
 	implementation string
-	command        *exec.Cmd
-	stdin          io.WriteCloser
-	responses      chan rpcResponse
-	done           chan error
+	worker         *nodeworker.Process
+	nodePath       string
+	workerPath     string
 	events         chan orchestrator.EngineEvent
-	stderr         *lockedBuffer
+	eventsMu       sync.RWMutex
+	eventsClosed   bool
 	capabilities   []string
 	callMu         sync.Mutex
-	nextID         atomic.Uint64
-	disconnecting  atomic.Bool
-	closed         atomic.Bool
+	disconnecting  bool
+	closed         bool
+	eventsOnce     sync.Once
 	endpoint       orchestrator.TargetEndpoint
 	targetProtocol string
 	renewalStop    chan struct{}
 	renewalOnce    sync.Once
 	renewalWG      sync.WaitGroup
-}
-
-type lockedBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (b *lockedBuffer) Write(value []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.b.Write(value)
-}
-
-func (b *lockedBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return strings.TrimSpace(b.b.String())
 }
 
 var _ orchestrator.EngineAdapter = Adapter{}
@@ -144,64 +113,29 @@ func (a Adapter) Connect(
 	if err != nil {
 		return nil, err
 	}
-	command := exec.Command(nodePath, workerPath, "--adapter", a.implementation)
-	command.Env, err = targetconn.NodeEnvironment(endpoint, os.Environ())
-	if err != nil {
-		return nil, err
-	}
-	stdin, err := command.StdinPipe()
-	if err != nil {
-		return nil, fmt.Errorf("open %s worker input: %w", a.implementation, err)
-	}
-	stdout, err := command.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("open %s worker output: %w", a.implementation, err)
-	}
-	stderr := &lockedBuffer{}
-	command.Stderr = stderr
 	running := &instance{
 		implementation: a.implementation,
-		command:        command,
-		stdin:          stdin,
-		responses:      make(chan rpcResponse, 1),
-		done:           make(chan error, 1),
-		events:         make(chan orchestrator.EngineEvent, 1),
-		stderr:         stderr,
+		nodePath:       nodePath,
+		workerPath:     workerPath,
+		events:         make(chan orchestrator.EngineEvent, 8),
 		endpoint:       endpoint,
 		targetProtocol: targetProtocol,
 		renewalStop:    make(chan struct{}),
 	}
-	if err := command.Start(); err != nil {
-		return nil, fmt.Errorf("start %s interaction worker: %w", a.implementation, err)
-	}
-	go running.readResponses(stdout)
-	go running.wait()
-
 	connectionSnapshot := endpoint.Connection.Snapshot()
-	connectParams, _ := json.Marshal(map[string]any{
-		"endpoint": endpoint.URL,
-		"protocol": targetProtocol,
-		"headers":  connectionSnapshot.Headers,
-	})
-	result, err := running.request(ctx, "connect", connectParams)
+	worker, capabilities, err := running.startWorker(ctx)
 	if err != nil {
-		running.terminate()
-		return nil, fmt.Errorf("connect %s to target: %w%s", a.implementation, err, running.stderrSuffix())
+		return nil, err
 	}
-	var connected struct {
-		Capabilities []string `json:"capabilities"`
-	}
-	if err := json.Unmarshal(result, &connected); err != nil {
-		running.terminate()
-		return nil, fmt.Errorf("decode %s worker handshake: %w", a.implementation, err)
-	}
-	running.capabilities = stableStrings(connected.Capabilities)
+	running.worker = worker
+	running.capabilities = capabilities
+	go running.monitorWorker(worker)
 	if endpoint.Connection != nil {
 		updates := endpoint.Connection.Updates()
 		running.renewalWG.Add(1)
 		go func() {
 			defer running.renewalWG.Done()
-			running.watchConnectionMaterial(updates, connectionSnapshot.Revision)
+			running.watchConnectionMaterial(updates, connectionSnapshot)
 		}()
 	}
 	if source := strings.TrimSpace(spec.Source); source != "" {
@@ -241,57 +175,28 @@ func (i *instance) Call(ctx context.Context, method string, params json.RawMessa
 func (i *instance) request(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	i.callMu.Lock()
 	defer i.callMu.Unlock()
-	if i.closed.Load() {
+	if i.closed || i.worker == nil {
 		return nil, errors.New("interaction worker is disconnected")
 	}
-	id := i.nextID.Add(1)
-	request, _ := json.Marshal(rpcRequest{ID: id, Method: method, Params: params})
-	if _, err := i.stdin.Write(append(request, '\n')); err != nil {
-		return nil, fmt.Errorf("write worker request: %w", err)
-	}
-	select {
-	case response, open := <-i.responses:
-		if !open {
-			return nil, errors.New("interaction worker exited")
-		}
-		if response.ID != id {
-			return nil, fmt.Errorf("worker response id %d does not match request %d", response.ID, id)
-		}
-		if response.Error != "" {
-			return nil, errors.New(response.Error)
-		}
-		if !json.Valid(response.Result) {
-			return nil, errors.New("worker returned invalid JSON")
-		}
-		return response.Result, nil
-	case <-ctx.Done():
-		i.terminate()
-		return nil, ctx.Err()
-	}
+	return i.worker.Call(ctx, method, params)
 }
 
 func (i *instance) Disconnect(ctx context.Context) error {
 	i.stopConnectionMaterialWatch()
-	if !i.disconnecting.CompareAndSwap(false, true) {
-		select {
-		case <-i.done:
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+	i.renewalWG.Wait()
+	i.callMu.Lock()
+	if i.closed {
+		i.callMu.Unlock()
+		return nil
 	}
-	_, requestErr := i.request(ctx, "disconnect", json.RawMessage(`{}`))
-	_ = i.stdin.Close()
-	select {
-	case waitErr := <-i.done:
-		if requestErr != nil {
-			return requestErr
-		}
-		return waitErr
-	case <-ctx.Done():
-		i.terminate()
-		return ctx.Err()
-	}
+	i.disconnecting = true
+	worker := i.worker
+	i.worker = nil
+	i.closed = true
+	i.callMu.Unlock()
+	err := worker.Disconnect(ctx)
+	i.finish(orchestrator.EngineEvent{Type: "interaction.disconnected", Status: "disconnected", OccurredAt: time.Now().UTC()})
+	return err
 }
 
 func (i *instance) EngineHealth(ctx context.Context) orchestrator.EngineHealth {
@@ -320,81 +225,58 @@ func (i *instance) EngineHealth(ctx context.Context) orchestrator.EngineHealth {
 }
 
 func (i *instance) EngineCapabilities() []string {
+	i.callMu.Lock()
+	defer i.callMu.Unlock()
 	return append([]string(nil), i.capabilities...)
 }
 
 func (i *instance) EngineEvents() <-chan orchestrator.EngineEvent { return i.events }
 
-func (i *instance) readResponses(stdout io.Reader) {
-	defer close(i.responses)
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
-	for scanner.Scan() {
-		var response rpcResponse
-		if err := json.Unmarshal(scanner.Bytes(), &response); err != nil {
-			response.Error = "decode worker response: " + err.Error()
-		}
-		i.responses <- response
-	}
-}
-
-func (i *instance) wait() {
-	err := i.command.Wait()
-	i.closed.Store(true)
-	i.stopConnectionMaterialWatch()
-	i.renewalWG.Wait()
-	i.done <- err
-	close(i.done)
-	event := orchestrator.EngineEvent{Type: "interaction.disconnected", Status: "disconnected", OccurredAt: time.Now().UTC()}
-	if err != nil && !i.disconnecting.Load() {
-		event.Type = "interaction.failed"
-		event.Status = "failed"
-		event.Message = err.Error() + i.stderrSuffix()
-	}
-	i.events <- event
-	close(i.events)
-}
-
-func (i *instance) watchConnectionMaterial(updates <-chan uint64, connectedRevision uint64) {
+func (i *instance) watchConnectionMaterial(updates <-chan uint64, connected orchestrator.EndpointConnectionSnapshot) {
 	for {
-		currentRevision := i.endpoint.Connection.Snapshot().Revision
-		if currentRevision > connectedRevision {
-			if !i.reconnectWithMaterial(currentRevision) {
+		current := i.endpoint.Connection.Snapshot()
+		if current.Revision > connected.Revision {
+			if !i.applyConnectionMaterial(current, connected) {
 				return
 			}
-			connectedRevision = currentRevision
+			connected = current
 			continue
 		}
 		select {
 		case <-i.renewalStop:
 			return
 		case revision, open := <-updates:
-			if !open || i.disconnecting.Load() || i.closed.Load() {
+			if !open {
 				return
 			}
-			if revision <= connectedRevision {
+			if revision <= connected.Revision {
 				continue
 			}
-			if !i.reconnectWithMaterial(revision) {
+			current = i.endpoint.Connection.Snapshot()
+			if !i.applyConnectionMaterial(current, connected) {
 				return
 			}
-			connectedRevision = revision
+			connected = current
 		}
 	}
 }
 
-func (i *instance) reconnectWithMaterial(revision uint64) bool {
+func (i *instance) applyConnectionMaterial(current, connected orchestrator.EndpointConnectionSnapshot) bool {
 	reportedFailure := false
 	for {
-		params, _ := json.Marshal(map[string]any{
-			"endpoint": i.endpoint.URL, "protocol": i.targetProtocol,
-			"headers": targetconn.Headers(i.endpoint),
-		})
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		_, err := i.request(ctx, "reconnect", params)
+		var err error
+		if current.TLSRevision > connected.TLSRevision {
+			err = i.replaceWorker(ctx)
+		} else {
+			params, _ := json.Marshal(map[string]any{
+				"endpoint": i.endpoint.URL, "protocol": i.targetProtocol, "headers": current.Headers,
+			})
+			_, err = i.request(ctx, "reconnect", params)
+		}
 		cancel()
 		if err == nil {
-			i.endpoint.Connection.Acknowledge(revision)
+			i.endpoint.Connection.Acknowledge(current.Revision)
 			return i.emitConnectionEvent(orchestrator.EngineEvent{Type: "interaction.connection.renewed", OccurredAt: time.Now().UTC()})
 		}
 		if !reportedFailure {
@@ -418,6 +300,11 @@ func (i *instance) reconnectWithMaterial(revision uint64) bool {
 }
 
 func (i *instance) emitConnectionEvent(event orchestrator.EngineEvent) bool {
+	i.eventsMu.RLock()
+	defer i.eventsMu.RUnlock()
+	if i.eventsClosed {
+		return false
+	}
 	select {
 	case i.events <- event:
 		return true
@@ -430,17 +317,90 @@ func (i *instance) stopConnectionMaterialWatch() {
 	i.renewalOnce.Do(func() { close(i.renewalStop) })
 }
 
-func (i *instance) terminate() {
-	if i.command.Process != nil {
-		_ = i.command.Process.Kill()
+func (i *instance) startWorker(ctx context.Context) (*nodeworker.Process, []string, error) {
+	environment, err := targetconn.NodeEnvironment(i.endpoint, os.Environ())
+	if err != nil {
+		return nil, nil, err
 	}
+	worker, err := nodeworker.Start(i.nodePath, i.workerPath, []string{"--adapter", i.implementation}, environment)
+	if err != nil {
+		return nil, nil, fmt.Errorf("start %s interaction worker: %w", i.implementation, err)
+	}
+	snapshot := i.endpoint.Connection.Snapshot()
+	params, _ := json.Marshal(map[string]any{
+		"endpoint": i.endpoint.URL, "protocol": i.targetProtocol, "headers": snapshot.Headers,
+	})
+	result, err := worker.Call(ctx, "connect", params)
+	if err != nil {
+		worker.Terminate()
+		return nil, nil, fmt.Errorf("connect %s to target: %w%s", i.implementation, err, worker.StderrSuffix())
+	}
+	var connected struct {
+		Capabilities []string `json:"capabilities"`
+	}
+	if err := json.Unmarshal(result, &connected); err != nil {
+		worker.Terminate()
+		return nil, nil, fmt.Errorf("decode %s worker handshake: %w", i.implementation, err)
+	}
+	return worker, stableStrings(connected.Capabilities), nil
 }
 
-func (i *instance) stderrSuffix() string {
-	if value := i.stderr.String(); value != "" {
-		return ": " + value
+func (i *instance) replaceWorker(ctx context.Context) error {
+	candidate, capabilities, err := i.startWorker(ctx)
+	if err != nil {
+		return err
 	}
-	return ""
+	i.callMu.Lock()
+	if i.closed || i.disconnecting {
+		i.callMu.Unlock()
+		candidate.Terminate()
+		return errors.New("interaction worker is disconnected")
+	}
+	previous := i.worker
+	i.worker = candidate
+	i.capabilities = capabilities
+	i.callMu.Unlock()
+	go i.monitorWorker(candidate)
+	if previous != nil {
+		drainCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = previous.Disconnect(drainCtx)
+		cancel()
+	}
+	return nil
+}
+
+func (i *instance) monitorWorker(worker *nodeworker.Process) {
+	<-worker.Done()
+	i.callMu.Lock()
+	if i.worker != worker || i.disconnecting || i.closed {
+		i.callMu.Unlock()
+		return
+	}
+	i.closed = true
+	i.worker = nil
+	i.callMu.Unlock()
+	i.stopConnectionMaterialWatch()
+	message := "interaction worker exited" + worker.StderrSuffix()
+	if err := worker.WaitError(); err != nil {
+		message = err.Error() + worker.StderrSuffix()
+	}
+	i.finish(orchestrator.EngineEvent{Type: "interaction.failed", Status: "failed", Message: message, OccurredAt: time.Now().UTC()})
+}
+
+func (i *instance) finish(event orchestrator.EngineEvent) {
+	i.eventsOnce.Do(func() {
+		i.eventsMu.Lock()
+		defer i.eventsMu.Unlock()
+		if i.eventsClosed {
+			return
+		}
+		select {
+		case i.events <- event:
+		default:
+		}
+		i.eventsClosed = true
+		close(i.events)
+	})
 }
 
 func decodeOptions(raw json.RawMessage) (options, error) {
