@@ -7,6 +7,9 @@ const protocol = await readFile(new URL("Source/JangolovaPacman/Public/PacmanPro
 const registryHeader = await readFile(new URL("Source/JangolovaPacman/Public/PacmanRegistryComponent.h", root), "utf8");
 const registry = await readFile(new URL("Source/JangolovaPacman/Private/PacmanRegistryComponent.cpp", root), "utf8");
 const transport = await readFile(new URL("Source/JangolovaPacman/Public/IPacmanTransportHost.h", root), "utf8");
+const router = await readFile(new URL("Source/JangolovaPacman/Private/PacmanRequestRouter.cpp", root), "utf8");
+const host = await readFile(new URL("Source/JangolovaPacman/Private/PacmanWebSocketHost.cpp", root), "utf8");
+const hostHeader = await readFile(new URL("Source/JangolovaPacman/Public/PacmanWebSocketHost.h", root), "utf8");
 const goProtocol = await readFile(new URL("../internal/pacman/protocol.go", import.meta.url), "utf8");
 
 assert.equal(plugin.Modules[0].Name, "JangolovaPacman");
@@ -29,5 +32,11 @@ assert.match(registry, /action_not_allowlisted/);
 assert.match(registry, /StableIdPattern/);
 assert.doesNotMatch(registry, /TObjectIterator|GetAllActorsOfClass|ForEachObjectOfClass/);
 assert.match(transport, /class JANGOLOVAPACMAN_API IPacmanTransportHost/);
-assert.doesNotMatch(`${registry}\n${transport}`, /RequestExit|QuitGame|ConsoleCommand.*quit|TerminateProc/);
+assert.match(hostHeader, /class JANGOLOVAPACMAN_API FPacmanWebSocketHost/);
+assert.match(host, /ConstantTimeEquals/);
+assert.match(host, /Bearer %s/);
+assert.match(router, /MaximumMessageBytes/);
+assert.match(router, /AsyncTask\(ENamedThreads::GameThread/);
+assert.match(router, /message_too_large/);
+assert.doesNotMatch(`${registry}\n${transport}\n${router}\n${host}`, /RequestExit|QuitGame|ConsoleCommand.*quit|TerminateProc/);
 console.log("Unreal Pacman package contract is valid.");

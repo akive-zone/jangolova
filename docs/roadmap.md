@@ -55,8 +55,10 @@
   allowlisting and target-preserving disconnect verification.
 - [x] Scaffold a distributable Unreal plugin with explicit resource/action
   registration and game-thread semantic dispatch.
-- [ ] Add an authenticated Unreal transport host and live packaged-game
-  conformance fixture.
+- [x] Add the authenticated Unreal WebSocket host and game-thread request
+  router boundary.
+- [ ] Add a platform-specific Unreal listener/upgrade binding and live
+  packaged-game conformance fixture.
 - [ ] Harden and platform-test the Unity WebSocket listener beyond the .NET 4.x
   MVP transport.
 

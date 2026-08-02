@@ -118,15 +118,16 @@ shared contract deliberately avoids Unity-specific types.
 `pkg/unreal-pacman` is the distributable Unreal Engine plugin. Its initial
 runtime module implements the same six methods through an explicitly populated
 UObject/Actor registry and game-thread dispatcher. Its `IPacmanTransportHost`
-boundary is ready for an authenticated server transport without coupling
-semantic dispatch to listener or application-lifecycle policy.
+boundary is implemented by an authenticated `FPacmanWebSocketHost`; a
+platform-specific listener supplies accepted WebSocket connections without
+coupling semantic dispatch to listener or application-lifecycle policy.
 
 The provider-side `pacman` adapter, transport connector, schema, and
 conformance suite are shared by both engines. Unity is therefore attached
 through the normal provider target descriptor today; it does not need a
 separate Unity-specific Jangolova adapter. The remaining Unity work is transport
 hardening and live platform coverage. The remaining Unreal work is the
-target-side C++ plugin implementing this existing contract.
+platform-specific listener/upgrade binding and live packaged-game fixture.
 
 If a Pacman attachment fails, the provider follows the common
 [interaction attachment recovery](attachment-recovery.md) policy and redials

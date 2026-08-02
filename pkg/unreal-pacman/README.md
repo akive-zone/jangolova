@@ -11,12 +11,13 @@ allowlists. The component never scans the World, Actor registry, UObject heap,
 or UMG tree.
 
 The initial semantic handlers provide `resource.describe` and
-`object.visibility.set`. A transport module implements `IPacmanTransportHost`,
-authenticates a caller-owned endpoint, wraps requests and responses, and invokes
-the registry on the Unreal game thread. Stopping a transport must only detach
-Pacman; it must never quit the game, destroy the World, or terminate the host
-process.
+`object.visibility.set`. `FPacmanWebSocketHost` authenticates an already
+upgraded caller-owned WebSocket with a bearer token, enforces the Pacman message
+limit, wraps requests and responses, and invokes the registry on the Unreal
+game thread. A platform binding supplies the listen/upgrade implementation via
+`IPacmanWebSocketConnection`. Stopping a transport must only detach Pacman; it
+must never quit the game, destroy the World, or terminate the host process.
 
-This first package slice establishes the engine-neutral registry and dispatcher.
-An authenticated server transport and live packaged-game fixture are the next
-Unreal milestones.
+This first package slice establishes the engine-neutral registry, dispatcher,
+and authenticated WebSocket connection host. A platform-specific listen/upgrade
+binding and live packaged-game fixture are the next Unreal milestones.
