@@ -129,6 +129,12 @@ separate Unity-specific Jangolova adapter. The remaining Unity work is transport
 hardening and live platform coverage. The remaining Unreal work is the
 platform-specific listener/upgrade binding and live packaged-game fixture.
 
+The source-only Unreal fixture is at
+`tests/unreal-pacman-fixture`. Its optional packaged-runtime image definition
+is at `deploy/unreal-pacman-fixture`; that environment is separate from the
+Jangolova provider image and accepts operator-supplied Unreal build/runtime
+images.
+
 If a Pacman attachment fails, the provider follows the common
 [interaction attachment recovery](attachment-recovery.md) policy and redials
 the same caller-owned endpoint. It does not restart or replay actions into the
@@ -141,5 +147,6 @@ Unity or Unreal application.
 - The Unity WebSocket host remains an initial Unity 2022.3/.NET 4.x
   `HttpListener` binding. Platforms without that support can implement another
   `IPacmanTransportHost` without changing Pacman semantics.
-- Unreal remains intentionally unimplemented, while the shared wire contract
-  contains no Unity-specific types.
+- Unreal live compilation and packaged-runtime coverage require an approved
+  Unreal Engine toolchain; the source package and fixture remain distributable
+  without bundling the editor or engine binaries.

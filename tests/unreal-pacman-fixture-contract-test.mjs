@@ -1,0 +1,33 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const root = new URL("./unreal-pacman-fixture/", import.meta.url);
+const project = JSON.parse(await readFile(new URL("UnrealPacmanFixture.uproject", root)));
+const actor = await readFile(new URL("Source/UnrealPacmanFixture/Private/PacmanFixtureActor.cpp", root), "utf8");
+const gameMode = await readFile(new URL("Source/UnrealPacmanFixture/Private/PacmanFixtureGameMode.cpp", root), "utf8");
+const automation = await readFile(new URL("Source/UnrealPacmanFixture/Private/PacmanFixtureAutomationTests.cpp", root), "utf8");
+const build = await readFile(new URL("Source/UnrealPacmanFixture/UnrealPacmanFixture.Build.cs", root), "utf8");
+const container = await readFile(new URL("../deploy/unreal-pacman-fixture/Containerfile", import.meta.url), "utf8");
+const runtime = await readFile(new URL("../deploy/unreal-pacman-fixture/run-fixture.sh", import.meta.url), "utf8");
+
+assert.equal(project.Modules[0].Name, "UnrealPacmanFixture");
+assert.equal(project.Modules[0].Type, "Runtime");
+assert.deepEqual(project.TargetPlatforms, ["Linux"]);
+assert.ok(project.AdditionalPluginDirectories.includes("../../pkg"));
+assert.ok(project.Plugins.some((plugin) => plugin.Name === "JangolovaPacman" && plugin.Enabled));
+assert.match(actor, /object:fixture/);
+assert.match(actor, /resource\.describe/);
+assert.match(actor, /object\.visibility\.set/);
+assert.match(actor, /UPacmanRegistryComponent/);
+assert.match(gameMode, /SpawnActor<APacmanFixtureActor>/);
+assert.match(automation, /Jangolova\.Pacman\.Fixture\.ExplicitRegistration/);
+assert.match(automation, /object\.visibility\.set/);
+assert.match(build, /JangolovaPacman/);
+assert.match(container, /ARG UE_BUILD_IMAGE/);
+assert.match(container, /ARG UE_RUNTIME_IMAGE/);
+assert.match(container, /BuildPlugin/);
+assert.match(container, /BuildCookRun/);
+assert.doesNotMatch(container, /jangolova\/engine-runtime/);
+assert.match(runtime, /UNREAL_FIXTURE_EXECUTABLE/);
+assert.match(runtime, /-unattended/);
+console.log("Unreal Pacman fixture environment contract is valid.");

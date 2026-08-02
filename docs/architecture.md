@@ -98,8 +98,10 @@ internal/bridge/            engine-neutral semantic methods
 adapters/browserautomation/ Playwright CDP and Puppeteer CDP/BiDi attachment
 adapters/webdriverclassic/  existing W3C WebDriver session attachment
 adapters/safarimcp/         caller-owned Safari MCP relay attachment
-integrations/               Three.js, Unity, and future Unreal integrations
+pkg/                        distributable Unity and Unreal Pacman packages
+tests/unreal-pacman-fixture/ caller-owned Unreal conformance project
 deploy/engine-runtime/      optional interaction artifact
+deploy/unreal-pacman-fixture/ optional packaged Unreal target image
 tests/docker/               target-owning portability fixture only
 ```
 
