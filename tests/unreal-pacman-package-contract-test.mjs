@@ -1,0 +1,33 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const root = new URL("../pkg/unreal-pacman/", import.meta.url);
+const plugin = JSON.parse(await readFile(new URL("JangolovaPacman.uplugin", root)));
+const protocol = await readFile(new URL("Source/JangolovaPacman/Public/PacmanProtocol.h", root), "utf8");
+const registryHeader = await readFile(new URL("Source/JangolovaPacman/Public/PacmanRegistryComponent.h", root), "utf8");
+const registry = await readFile(new URL("Source/JangolovaPacman/Private/PacmanRegistryComponent.cpp", root), "utf8");
+const transport = await readFile(new URL("Source/JangolovaPacman/Public/IPacmanTransportHost.h", root), "utf8");
+const goProtocol = await readFile(new URL("../internal/pacman/protocol.go", import.meta.url), "utf8");
+
+assert.equal(plugin.Modules[0].Name, "JangolovaPacman");
+assert.equal(plugin.Modules[0].Type, "Runtime");
+const unrealVersion = protocol.match(/ProtocolVersion\[\].*TEXT\("([^"]+)"\)/)?.[1];
+const goVersion = goProtocol.match(/ProtocolVersion = "([^"]+)"/)?.[1];
+assert.equal(unrealVersion, "jangolova.pacman/v1alpha1");
+assert.equal(unrealVersion, goVersion);
+for (const method of ["hello", "capabilities", "describe", "act", "events", "health"]) {
+  assert.ok(protocol.includes(`TEXT("${method}")`));
+}
+for (const kind of ["Scene", "Object", "UI", "Camera", "Material", "Animation", "Timeline", "Artifact", "Event"]) {
+  assert.match(protocol, new RegExp(`\\b${kind}\\b`));
+}
+assert.match(protocol, /TObjectPtr<UObject> Target/);
+assert.match(protocol, /TArray<FString> Actions/);
+assert.match(registryHeader, /TMap<FString, const FPacmanRegistration\*> Allowlist/);
+assert.match(registry, /check\(IsInGameThread\(\)\)/);
+assert.match(registry, /action_not_allowlisted/);
+assert.match(registry, /StableIdPattern/);
+assert.doesNotMatch(registry, /TObjectIterator|GetAllActorsOfClass|ForEachObjectOfClass/);
+assert.match(transport, /class JANGOLOVAPACMAN_API IPacmanTransportHost/);
+assert.doesNotMatch(`${registry}\n${transport}`, /RequestExit|QuitGame|ConsoleCommand.*quit|TerminateProc/);
+console.log("Unreal Pacman package contract is valid.");

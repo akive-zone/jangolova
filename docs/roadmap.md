@@ -53,7 +53,10 @@
   interaction provider.
 - [x] Add a minimal Unity Pacman package with explicit resource/action
   allowlisting and target-preserving disconnect verification.
-- [ ] Add an Unreal plugin implementing the same semantic contract.
+- [x] Scaffold a distributable Unreal plugin with explicit resource/action
+  registration and game-thread semantic dispatch.
+- [ ] Add an authenticated Unreal transport host and live packaged-game
+  conformance fixture.
 - [ ] Harden and platform-test the Unity WebSocket listener beyond the .NET 4.x
   MVP transport.
 

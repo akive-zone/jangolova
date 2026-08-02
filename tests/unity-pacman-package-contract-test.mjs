@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const root = new URL("../integrations/unity/com.jangolova.pacman/", import.meta.url);
+const root = new URL("../pkg/unity-pacman/", import.meta.url);
 const manifest = JSON.parse(await readFile(new URL("package.json", root)));
 const protocol = await readFile(new URL("Runtime/PacmanProtocol.cs", root), "utf8");
 const bridge = await readFile(new URL("Runtime/PacmanBridge.cs", root), "utf8");

@@ -109,13 +109,29 @@ the replacement connection.
 
 ## Implementations
 
-`integrations/unity/com.jangolova.pacman` is the minimal Unity implementation.
-It uses serialized registrations for allowlisting and dispatches semantic work
-on Unity's main thread. `PacmanWebSocketHost` is one replaceable
+`pkg/unity-pacman` is the distributable Unity implementation. It uses serialized
+registrations for allowlisting and dispatches semantic work on Unity's main
+thread. `PacmanWebSocketHost` is one replaceable
 `IPacmanTransportHost`; `PacmanBridge` has no WebSocket listener policy. The
-shared contract deliberately avoids Unity-specific types so a later Unreal C++
-plugin can implement the same methods with explicit UObject/Actor
-registrations.
+shared contract deliberately avoids Unity-specific types.
+
+`pkg/unreal-pacman` is the distributable Unreal Engine plugin. Its initial
+runtime module implements the same six methods through an explicitly populated
+UObject/Actor registry and game-thread dispatcher. Its `IPacmanTransportHost`
+boundary is ready for an authenticated server transport without coupling
+semantic dispatch to listener or application-lifecycle policy.
+
+The provider-side `pacman` adapter, transport connector, schema, and
+conformance suite are shared by both engines. Unity is therefore attached
+through the normal provider target descriptor today; it does not need a
+separate Unity-specific Jangolova adapter. The remaining Unity work is transport
+hardening and live platform coverage. The remaining Unreal work is the
+target-side C++ plugin implementing this existing contract.
+
+If a Pacman attachment fails, the provider follows the common
+[interaction attachment recovery](attachment-recovery.md) policy and redials
+the same caller-owned endpoint. It does not restart or replay actions into the
+Unity or Unreal application.
 
 ## Compatibility notes
 

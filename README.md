@@ -97,6 +97,7 @@ go test ./...
 npm run test:browser-worker
 npm run test:unity-package
 npm run test:unity-pacman-package
+npm run test:unreal-pacman-package
 ```
 
 The optional container fixture is documented in
