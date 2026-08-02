@@ -8,7 +8,7 @@ Build locally or in CI:
 
 ```sh
 docker build \
-  --build-arg GODOT_IMAGE=barichello/godot:4.3 \
+  --build-arg GODOT_IMAGE=barichello/godot-ci:4.3 \
   -f deploy/godot-pacman-fixture/Containerfile \
   -t jangolova/godot-pacman-fixture:local .
 ```

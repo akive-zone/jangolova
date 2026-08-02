@@ -1,4 +1,4 @@
-ARG GODOT_IMAGE=barichello/godot:4.3
+ARG GODOT_IMAGE=barichello/godot-ci:4.3
 FROM ${GODOT_IMAGE}
 
 WORKDIR /workspace
