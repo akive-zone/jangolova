@@ -18,7 +18,7 @@ test("browser-ext is the canonical WXT product", async () => {
 test("Jangolova owns extension platform services", async () => {
   const engine = await source("pkg/browser-ext/src/engine.ts");
   const runtime = await source("pkg/browser-ext/src/runtime.ts");
-  for (const service of ["events", "injection", "network", "storage", "tabs", "policy", "pacman"]) {
+  for (const service of ["events", "injection", "network", "storage", "tabs", "policy", "pacman", "userscripts"]) {
     await source(`pkg/browser-ext/src/services/${service}.ts`);
   }
   assert.match(engine, /services\/injection/);
@@ -28,6 +28,8 @@ test("Jangolova owns extension platform services", async () => {
   assert.match(engine, /profiles: \['web'\]/);
   assert.match(runtime, /pacman\.call/);
   assert.match(runtime, /cymonkey\.call/);
+  assert.doesNotMatch(runtime, /startsWith\('userscript\.'\)/);
+  assert.match(engine, /dispatchUserscript/);
 });
 
 test("public page bridge remains Cymonkey-only and page-safe", async () => {

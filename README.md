@@ -29,6 +29,11 @@ same target endpoints and handles without Xallet.
 - Runtime-agnostic Cymonkey augmentation profiles: web today, plus a bounded
   macOS contract for allowlisted application commands and Accessibility UI
   operations through caller-owned native helpers.
+- A Jangolova macOS menu-bar host that can run the bounded Cymonkey runtime,
+  embeds the Safari WebExtension, and displays a source-free userscript catalog.
+- Cymonkey userscript capabilities using the shared
+  `jangolova.cymonkey.userscript/v1alpha1` manifest, backed by the extension's
+  approval, persistence, and native registration manager.
 - WebDriver Classic attachment to an existing caller-owned session, including
   Safari's `safaridriver`.
 - Named WebKit WebDriver attachment for WebKitGTK, WPE WebKit, and Safari.
@@ -67,6 +72,7 @@ the target owner install the unpacked extension from
 ```bash
 npm install --prefix pkg/browser-ext
 npm run build:browser-extension
+npm run build:macos-extension
 ```
 
 Every browser artifact contains the Xallet Spook integration. It operates as an
@@ -150,6 +156,8 @@ See [Architecture](docs/architecture.md), [Interaction provider](docs/engine-pro
 [Grimlock agent subsystem](docs/grimlock.md),
 [Cymonkey runtime-agnostic augmentation](docs/cymonkey-runtime.md),
 [Cymonkey web profile](docs/cymonkey.md),
+[Cymonkey userscripts](docs/userscripts.md),
+[Jangolova macOS extension](docs/macos-extension.md),
 [Pacman](docs/pacman.md),
 [interface creation and operation](docs/interface-model.md),
 [caller-supplied targets](docs/target-descriptor.md),
@@ -162,6 +170,8 @@ See [Architecture](docs/architecture.md), [Interaction provider](docs/engine-pro
 go test ./...
 npm run test:browser-worker
 npm run test:cymonkey
+npm run test:userscripts
+npm run test:macos-extension
 npm run test:unity-package
 npm run test:unity-pacman-package
 npm run test:unreal-pacman-package

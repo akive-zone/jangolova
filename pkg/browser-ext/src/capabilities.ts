@@ -7,7 +7,7 @@ export const pageCapabilities = [
   capability('overlay.unmount', 'Remove a Cymonkey overlay.', 'write', ['id'], 'surface', 'ephemeral'),
 ];
 
-export const privilegedCapabilities = [
+const extensionCapabilities = [
   ...pageCapabilities,
   capability('script.execute', 'Execute packaged augmentation scripts once.', 'external', ['augmentationId', 'files'], 'call', 'ephemeral'),
   capability('script.register', 'Register a packaged augmentation content script.', 'external', ['augmentationId', 'script']),
@@ -19,5 +19,17 @@ export const privilegedCapabilities = [
   capability('storage.get', 'Read augmentation-scoped extension storage.', 'read', ['augmentationId', 'keys']),
   capability('storage.set', 'Write augmentation-scoped extension storage.', 'write', ['augmentationId', 'values']),
 ];
+
+export const userscriptCapabilities = [
+  capability('userscript.install', 'Install an explicitly approved userscript manifest.', 'external', ['manifest', 'approved']),
+  capability('userscript.update', 'Update an installed userscript after permission checks.', 'external', ['manifest']),
+  capability('userscript.uninstall', 'Remove an installed userscript.', 'external', ['id']),
+  capability('userscript.enable', 'Enable an installed userscript when native execution is available.', 'external', ['id']),
+  capability('userscript.disable', 'Disable an installed userscript.', 'external', ['id']),
+  capability('userscript.list', 'List source-free userscript descriptions.', 'read', [], 'call', 'ephemeral'),
+  capability('userscript.describe', 'Describe one installed userscript without returning source.', 'read', ['id'], 'call', 'ephemeral'),
+];
+
+export const privilegedCapabilities = [...extensionCapabilities, ...userscriptCapabilities];
 
 export const privilegedCapabilityNames = privilegedCapabilities.map((item) => item.name);

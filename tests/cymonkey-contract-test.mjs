@@ -97,7 +97,7 @@ test("WXT package builds once per browser with embedded Xallet Spook support", a
   assert.doesNotMatch(JSON.stringify(pkg.scripts), /mode spoke|build:spoke|dev:spoke/);
   assert.match(config, /outDirTemplate: '\{\{browser\}\}-mv\{\{manifestVersion\}\}'/);
   assert.match(config, /'management'/);
-  assert.match(config, /externally_connectable: \{ ids: \['\*'\] \}/);
+  assert.match(config, /externally_connectable: browser === 'safari' \? undefined : \{ ids: \['\*'\] \}/);
   assert.match(config, /data_collection_permissions/);
 });
 

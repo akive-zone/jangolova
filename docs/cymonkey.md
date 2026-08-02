@@ -261,9 +261,12 @@ npm install --prefix pkg/browser-ext
 npm --prefix pkg/browser-ext run check
 ```
 
-Outputs are `.output/chrome-mv3`, `.output/edge-mv3`, and
-`.output/firefox-mv3`. There is no separate normal or Spook build. The target
-owner loads the appropriate browser directory; Jangolova does not install it.
+Outputs are `.output/chrome-mv3`, `.output/edge-mv3`,
+`.output/firefox-mv3`, and `.output/safari-mv3`. The Safari resources are
+embedded in the containing app under `pkg/macos-ext`; its currently unsupported
+extension permissions are omitted and the resulting capability set is reduced.
+There is no separate normal or Spook build. The target owner loads or installs
+the appropriate product; Jangolova does not install it.
 
 ## Connection examples
 

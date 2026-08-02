@@ -33,6 +33,19 @@ In browsers, `@jangolova/threejs-pacman` maps allowlisted stable IDs to Three.js
 scenes, objects, cameras, materials, and animation actions. It never scans
 arbitrary page or scene objects.
 
+Userscripts are a privileged Cymonkey augmentation form with the shared
+`jangolova.cymonkey.userscript/v1alpha1` manifest. Cymonkey owns their semantic
+lifecycle through `capabilities`, `describe`, `act`, and `events`. The WXT
+extension provides the approval, storage, reconciliation, and native
+registration manager. The macOS containing app receives source-free catalog
+metadata from its embedded Safari extension; source never crosses that bridge.
+
+`pkg/macos-ext` is the user-facing macOS product. It imports the distinct
+`CymonkeyMacOSRuntime` library, can supervise that runtime when explicitly
+started by the user, presents consent/runtime state in a menu bar, and embeds
+the Safari WebExtension. It owns only its helper connection, never the target
+applications it augments.
+
 The public page bridge contains only page-safe Cymonkey operations. Platform
 services and Pacman control are reachable only through the authenticated
 extension control plane or a caller-owned CDP/BiDi/MCP connection.
@@ -139,6 +152,9 @@ adapters/webdriverclassic/  existing W3C WebDriver session attachment
 adapters/safarimcp/         caller-owned Safari MCP relay attachment
 pkg/browser-ext/           single-build WXT runtime with optional Xallet Spook activation
 pkg/macos-cymonkey-helper/  caller-owned Swift Apple Events/Accessibility binding
+pkg/macos-ext/              menu-bar host, managed helper mode, and Safari container
+pkg/userscript-runtime/     shared Cymonkey userscript validation and registration planning
+protocol/userscript/        versioned Cymonkey userscript payload schema
 pkg/threejs-pacman/         explicit-registration Three.js Pacman runtime
 pkg/                        distributable Godot, Unity, and Unreal Pacman packages
 tests/godot-pacman-fixture/ license-free Godot conformance project

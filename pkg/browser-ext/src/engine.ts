@@ -1,19 +1,27 @@
-import { privilegedCapabilities } from './capabilities';
+import { privilegedCapabilities, userscriptCapabilities } from './capabilities';
 import { readEvents } from './services/events';
 import { changeStyle, executePackagedScripts, registerPackagedScripts, unregisterPackagedScripts } from './services/injection';
 import { installOwnedRules, removeOwnedRules } from './services/network';
 import { requireScopedIdentifier } from './services/policy';
 import { readScopedStorage, writeScopedStorage } from './services/storage';
 import { activeTab, requireTabID, sendToTab, targetTab } from './services/tabs';
+import { describeRuntime as describeUserscriptRuntime, describeUserscriptManager, dispatchUserscript } from './services/userscripts';
 import { isRecord, type EventQuery } from './types';
 
 export async function dispatchCymonkey(method: string, params: Record<string, unknown> = {}) {
   if (method === 'hello') return hello();
-  if (method === 'capabilities') return privilegedCapabilities;
+  if (method === 'capabilities') return capabilities();
   if (method === 'describe') return describe();
   if (method === 'act') return act(String(params.name || ''), isRecord(params.input) ? params.input : {});
   if (method === 'events') return readEvents(params as EventQuery);
   throw new Error(`unsupported Cymonkey method ${method}`);
+}
+
+async function capabilities() {
+  const runtime = await describeUserscriptRuntime();
+  if (runtime.status === 'available') return privilegedCapabilities;
+  const userscriptNames = new Set(userscriptCapabilities.map((item) => item.name));
+  return privilegedCapabilities.filter((item) => !userscriptNames.has(item.name));
 }
 
 // Compatibility export for callers compiled against the first extension slice.
@@ -31,7 +39,7 @@ function hello() {
     profiles: ['web'],
     features: [
       'augmentation', 'jangolova.platform-services', 'events.cursor', 'scripts.packaged',
-      'standalone', 'xallet.spook.runtime-discovery',
+      'userscripts', 'standalone', 'xallet.spook.runtime-discovery',
     ],
   };
 }
@@ -60,12 +68,14 @@ async function describe() {
     },
     activeTab: tab ? { id: tab.id, url: tab.url || null, title: tab.title || null } : null,
     registeredScripts: scripts.map((script) => script.id).sort(),
+    userscripts: await describeUserscriptManager(),
     dynamicRuleIds: rules.map((rule) => rule.id).sort((left, right) => left - right),
     page,
   };
 }
 
 async function act(name: string, input: Record<string, unknown>) {
+  if (name.startsWith('userscript.')) return dispatchUserscript(name, input);
   const augmentationId = name.startsWith('dom.') || name.startsWith('overlay.') ? null : requireAugmentation(input);
   if (name === 'script.execute') return executePackagedScripts(augmentationId!, input);
   if (name === 'script.register') return registerPackagedScripts(augmentationId!, input);

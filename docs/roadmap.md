@@ -86,6 +86,16 @@
 - [x] Add shared Go validation and a policy-filtered macOS capability mapper.
 - [x] Implement a caller-owned macOS native helper that negotiates Automation
   and Accessibility consent and exposes only mapped capabilities.
+- [x] Add a macOS menu-bar containing app that imports the reusable Cymonkey
+  runtime, offers explicit managed start/stop, and embeds a Safari WebExtension.
+- [x] Define Cymonkey userscript lifecycle capabilities and the shared
+  `jangolova.cymonkey.userscript/v1alpha1` manifest, bounded
+  `@grant none` MVP, approval checks, permission-increase checks, and native
+  WebExtension registration adapter.
+- [x] Share source-free userscript catalog metadata from the Safari extension
+  to the containing app through an App Group native-message handler.
+- [ ] Enable Safari userscript execution only when a shipping Safari runtime
+  exposes and passes the dedicated native userscript capability probe.
 - [ ] Run shared lifecycle conformance against web and fake/native macOS
   backends, including stale surface references and permission revocation.
 

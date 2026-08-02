@@ -2,7 +2,7 @@ import { defineConfig } from 'wxt';
 
 export default defineConfig({
   outDirTemplate: '{{browser}}-mv{{manifestVersion}}',
-  manifest: {
+  manifest: ({ browser }) => ({
     name: 'Jangolova Browser Extension',
     description: 'Jangolova browser runtime with Cymonkey, Pacman, and runtime-activated Xallet Spook integration',
     permissions: [
@@ -11,10 +11,10 @@ export default defineConfig({
       'scripting',
       'storage',
       'tabs',
-      'management',
+      ...(browser === 'safari' ? [] : ['management', 'userScripts']),
     ],
     host_permissions: ['<all_urls>'],
-    externally_connectable: { ids: ['*'] },
+    externally_connectable: browser === 'safari' ? undefined : { ids: ['*'] },
     web_accessible_resources: [
       {
         resources: ['cymonkey-main.js', 'augmentations/*'],
@@ -30,5 +30,5 @@ export default defineConfig({
         },
       },
     },
-  },
+  }),
 });

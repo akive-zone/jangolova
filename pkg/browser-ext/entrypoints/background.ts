@@ -5,6 +5,7 @@ import { publishCymonkeyEvent } from '../src/services/events';
 import { isExtensionControlCall } from '../src/services/policy';
 import { errorMessage, isRecord, type XalletSpookState } from '../src/types';
 import { XalletSpookClient } from '../src/xallet-spook';
+import { reconcileUserscripts } from '../src/services/userscripts';
 
 export default defineBackground(() => {
   let state: XalletSpookState = {
@@ -25,6 +26,11 @@ export default defineBackground(() => {
     browser,
   );
   spook.start();
+  void reconcileUserscripts();
+
+  browser.runtime.onInstalled.addListener(() => {
+    void reconcileUserscripts();
+  });
 
   browser.runtime.onMessage.addListener((message, sender) => {
     return handleMessage(message, sender.tab?.id);

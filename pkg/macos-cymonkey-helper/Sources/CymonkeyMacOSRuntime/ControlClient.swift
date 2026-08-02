@@ -40,13 +40,21 @@ public final class WebSocketControlClient: @unchecked Sendable {
         self.session = session
     }
 
-    public func run(runtime: CymonkeyRuntime) async throws {
+    public func run(
+        runtime: CymonkeyRuntime,
+        onConnected: (@Sendable () async -> Void)? = nil
+    ) async throws {
         let task = session.webSocketTask(with: endpoint.request())
         task.maximumMessageSize = 4 * 1024 * 1024
         task.resume()
         defer { task.cancel(with: .goingAway, reason: nil) }
+        var didConnect = false
         while true {
             let message = try await task.receive()
+            if !didConnect {
+                didConnect = true
+                await onConnected?()
+            }
             let data: Data
             switch message {
             case .data(let value): data = value

@@ -80,7 +80,11 @@
       "type": "object",
       "properties": {
         "scripts": {"type": "array", "items": {"type": "object"}},
-        "styles": {"type": "array", "items": {"type": "object"}}
+        "styles": {"type": "array", "items": {"type": "object"}},
+        "userscripts": {
+          "type": "array",
+          "items": {"$ref": "../../userscript/v1alpha1/userscript.schema.json"}
+        }
       },
       "additionalProperties": false
     },
