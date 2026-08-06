@@ -136,9 +136,9 @@
 
 ## Phase 4: General display interaction
 
-- [ ] Define provider-neutral capture, coordinate-space, focus, pointer, and
-  keyboard target contracts.
-- [ ] Add display observation and pointer/keyboard semantic capabilities.
+- [x] Define provider-neutral capture, coordinate-space, focus, pointer, and
+  keyboard target contracts (`display-interaction` engine adapter).
+- [x] Add display observation (`display.describe`, `display.capture`) and pointer/keyboard (`pointer.*`, `keyboard.*`) semantic capabilities.
 - [ ] Add policy metadata for coordinate clicks, typing, and sensitive input.
 - [ ] Verify native-host and Xallet-provided display contracts with the same
   adapter conformance suite.

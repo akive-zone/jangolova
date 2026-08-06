@@ -7,6 +7,7 @@ import (
 
 	"jangolova/adapters/browserautomation"
 	"jangolova/adapters/cymonkey"
+	"jangolova/adapters/displayinteraction"
 	"jangolova/adapters/pacman"
 	"jangolova/adapters/safarimcp"
 	"jangolova/adapters/webdriverclassic"
@@ -39,6 +40,9 @@ func EngineRegistry() (*orchestrator.Registry, error) {
 	}
 	if err := registry.RegisterEngine("pacman", pacman.Adapter{}); err != nil {
 		return nil, fmt.Errorf("register Pacman interaction engine: %w", err)
+	}
+	if err := registry.RegisterEngine("display-interaction", displayinteraction.Adapter{}); err != nil {
+		return nil, fmt.Errorf("register display interaction engine: %w", err)
 	}
 	return registry, nil
 }

@@ -49,6 +49,12 @@ func targetProtocolCapabilities(endpoints []TargetEndpoint) []string {
 			capability = "target.webdriver"
 		case "mcp-streamable-http":
 			capability = "target.safari-mcp"
+		case "vnc", "rfb":
+			capability = "target.vnc"
+		case "webrtc":
+			capability = "target.webrtc"
+		case "wayland-rfb":
+			capability = "target.wayland-rfb"
 		default:
 			if protocol != "" {
 				capability = "target." + protocol

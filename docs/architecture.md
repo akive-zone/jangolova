@@ -155,6 +155,7 @@ internal/cymonkey/          runtime-agnostic augmentation contract and validatio
 adapters/cymonkey/          web backends plus bounded macOS capability mapping
 adapters/webdriverclassic/  existing W3C WebDriver session attachment
 adapters/safarimcp/         caller-owned Safari MCP relay attachment
+adapters/displayinteraction/ provider-neutral VNC/WebRTC/Wayland display interaction
 pkg/browser-ext/           single-build WXT runtime with optional Xallet Spook activation
 pkg/macos-cymonkey-helper/  caller-owned Swift Apple Events/Accessibility binding
 pkg/macos-ext/              menu-bar host, managed helper mode, and Safari container
