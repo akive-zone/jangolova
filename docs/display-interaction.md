@@ -72,8 +72,20 @@ The `display-interaction` engine exposes the standard five bridge methods (`hell
 * `pointer.click` — Performs mouse click at `(x, y)` (supports `left`, `right`, `middle` buttons, and click count).
 * `pointer.drag` — Performs mouse drag from `(startX, startY)` to `(endX, endY)`.
 * `pointer.scroll` — Performs mouse wheel scroll at `(x, y)` with `deltaX` and `deltaY`.
-* `keyboard.type` — Types a sequence of text characters into active focused window.
+* `keyboard.type` — Types a sequence of text characters into active focused window (supports `sensitive: true` flag for audit redaction).
 * `keyboard.press` — Presses specific key or key combination (e.g. `Control+C`, `Enter`, `Tab`, `Escape`).
+
+---
+
+## Policy & Security Bounds
+
+The `display-interaction` engine supports policy restrictions to protect sensitive UI regions and prevent unsafe system shortcuts:
+
+* **`allowedBounds`**: Enforces strict `(minX, minY, maxX, maxY)` coordinate bounds for pointer actions. Any move, click, drag, or scroll outside these bounds is rejected with a policy error.
+* **`maxTextLength`**: Restricts the maximum string length permitted per `keyboard.type` action.
+* **`blockedKeys`**: Rejects forbidden key shortcuts (e.g. `Control+Alt+Delete`, `Super`).
+* **`redactSensitiveInput`**: Automatically redacts typed text from audit events and logs when `sensitive: true` is set or policy redaction is active (`***REDACTED***`).
+* **Audit Events**: Emits structured session events (`display.action.invoked`, `display.action.denied`, `display.action.failed`) for full accountability.
 
 ---
 

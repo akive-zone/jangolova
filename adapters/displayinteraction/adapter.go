@@ -38,8 +38,53 @@ const (
 	ActionKeyboardPress   = "keyboard.press"
 )
 
+type DisplayBounds struct {
+	MinX int `json:"minX"`
+	MinY int `json:"minY"`
+	MaxX int `json:"maxX"`
+	MaxY int `json:"maxY"`
+}
+
+type Policy struct {
+	AllowedBounds        *DisplayBounds `json:"allowedBounds,omitempty"`
+	MaxTextLength        int            `json:"maxTextLength,omitempty"`
+	BlockedKeys          []string       `json:"blockedKeys,omitempty"`
+	RedactSensitiveInput bool           `json:"redactSensitiveInput,omitempty"`
+}
+
+func (p Policy) ValidateCoordinates(x, y int) error {
+	if p.AllowedBounds == nil {
+		return nil
+	}
+	b := p.AllowedBounds
+	if b.MaxX > 0 || b.MaxY > 0 {
+		if x < b.MinX || x > b.MaxX || y < b.MinY || y > b.MaxY {
+			return fmt.Errorf("coordinates (%d, %d) exceed allowed bounds [%d,%d - %d,%d]", x, y, b.MinX, b.MinY, b.MaxX, b.MaxY)
+		}
+	}
+	return nil
+}
+
+func (p Policy) ValidateText(text string) error {
+	if p.MaxTextLength > 0 && len(text) > p.MaxTextLength {
+		return fmt.Errorf("text length %d exceeds max allowed length %d", len(text), p.MaxTextLength)
+	}
+	return nil
+}
+
+func (p Policy) ValidateKey(key string) error {
+	k := strings.ToLower(strings.TrimSpace(key))
+	for _, blocked := range p.BlockedKeys {
+		if strings.ToLower(strings.TrimSpace(blocked)) == k {
+			return fmt.Errorf("key %q is blocked by display policy", key)
+		}
+	}
+	return nil
+}
+
 type Adapter struct {
 	Connector Connector
+	Policy    Policy
 }
 
 type Connector interface {
@@ -69,9 +114,9 @@ type DisplayDescription struct {
 }
 
 type FrameCapture struct {
-	Format    string `json:"format"` // e.g. "image/png"
-	Width     int    `json:"width"`
-	Height    int    `json:"height"`
+	Format     string `json:"format"` // e.g. "image/png"
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
 	Base64Data string `json:"base64Data"`
 }
 
@@ -81,6 +126,7 @@ type instance struct {
 	transport    Transport
 	endpoint     orchestrator.TargetEndpoint
 	capabilities []string
+	policy       Policy
 	disconnected bool
 	events       chan orchestrator.EngineEvent
 	renewalStop  chan struct{}
@@ -120,7 +166,7 @@ func (a Adapter) InspectEngine(context.Context) orchestrator.EngineInspection {
 	}
 }
 
-func (a Adapter) Connect(ctx context.Context, _ manifest.EngineSpec, target orchestrator.EngineTarget) (orchestrator.EngineInstance, error) {
+func (a Adapter) Connect(ctx context.Context, spec manifest.EngineSpec, target orchestrator.EngineTarget) (orchestrator.EngineInstance, error) {
 	validKinds := map[string]bool{
 		"display":           true,
 		"linux-application": true,
@@ -144,6 +190,23 @@ func (a Adapter) Connect(ctx context.Context, _ manifest.EngineSpec, target orch
 		return nil, fmt.Errorf("connect display-interaction endpoint %s: %w", endpoint.URL, err)
 	}
 
+	policy := a.Policy
+	if len(spec.Options) > 0 {
+		var opts struct {
+			Policy Policy `json:"policy"`
+		}
+		if err := json.Unmarshal(spec.Options, &opts); err == nil && (opts.Policy.AllowedBounds != nil || opts.Policy.MaxTextLength > 0 || len(opts.Policy.BlockedKeys) > 0) {
+			policy = opts.Policy
+		} else {
+			_ = json.Unmarshal(spec.Options, &policy)
+		}
+	}
+	if target.Metadata != nil {
+		if policyStr, exists := target.Metadata["display.policy"]; exists && policyStr != "" {
+			_ = json.Unmarshal([]byte(policyStr), &policy)
+		}
+	}
+
 	capabilities := []string{
 		"act", "capabilities", "describe", "events", "health",
 		"target." + strings.ToLower(endpoint.Protocol),
@@ -157,7 +220,8 @@ func (a Adapter) Connect(ctx context.Context, _ manifest.EngineSpec, target orch
 		transport:    transport,
 		endpoint:     endpoint,
 		capabilities: capabilities,
-		events:       make(chan orchestrator.EngineEvent, 8),
+		policy:       policy,
+		events:       make(chan orchestrator.EngineEvent, 16),
 		renewalStop:  make(chan struct{}),
 	}
 
@@ -249,15 +313,19 @@ func (i *instance) dispatchAction(ctx context.Context, transport Transport, name
 	case ActionDisplayDescribe:
 		desc, err := transport.Describe(ctx)
 		if err != nil {
+			i.emitAuditEvent("display.action.denied", name, err.Error())
 			return nil, err
 		}
+		i.emitAuditEvent("display.action.invoked", name, "")
 		return json.Marshal(desc)
 
 	case ActionDisplayCapture:
 		capture, err := transport.Capture(ctx)
 		if err != nil {
+			i.emitAuditEvent("display.action.denied", name, err.Error())
 			return nil, err
 		}
+		i.emitAuditEvent("display.action.invoked", name, "")
 		return json.Marshal(capture)
 
 	case ActionPointerMove:
@@ -268,9 +336,15 @@ func (i *instance) dispatchAction(ctx context.Context, transport Transport, name
 		if err := json.Unmarshal(input, &p); err != nil {
 			return nil, errors.New("pointer.move requires x and y integers")
 		}
-		if err := transport.PointerMove(ctx, p.X, p.Y); err != nil {
+		if err := i.policy.ValidateCoordinates(p.X, p.Y); err != nil {
+			i.emitAuditEvent("display.action.denied", name, err.Error())
 			return nil, err
 		}
+		if err := transport.PointerMove(ctx, p.X, p.Y); err != nil {
+			i.emitAuditEvent("display.action.failed", name, err.Error())
+			return nil, err
+		}
+		i.emitAuditEvent("display.action.invoked", name, fmt.Sprintf("(%d, %d)", p.X, p.Y))
 		return json.Marshal(map[string]any{"status": "ok"})
 
 	case ActionPointerClick:
@@ -289,9 +363,15 @@ func (i *instance) dispatchAction(ctx context.Context, transport Transport, name
 		if p.Count <= 0 {
 			p.Count = 1
 		}
-		if err := transport.PointerClick(ctx, p.X, p.Y, p.Button, p.Count); err != nil {
+		if err := i.policy.ValidateCoordinates(p.X, p.Y); err != nil {
+			i.emitAuditEvent("display.action.denied", name, err.Error())
 			return nil, err
 		}
+		if err := transport.PointerClick(ctx, p.X, p.Y, p.Button, p.Count); err != nil {
+			i.emitAuditEvent("display.action.failed", name, err.Error())
+			return nil, err
+		}
+		i.emitAuditEvent("display.action.invoked", name, fmt.Sprintf("(%d, %d) %s", p.X, p.Y, p.Button))
 		return json.Marshal(map[string]any{"status": "ok"})
 
 	case ActionPointerDrag:
@@ -304,9 +384,19 @@ func (i *instance) dispatchAction(ctx context.Context, transport Transport, name
 		if err := json.Unmarshal(input, &p); err != nil {
 			return nil, errors.New("pointer.drag requires startX, startY, endX, endY")
 		}
-		if err := transport.PointerDrag(ctx, p.StartX, p.StartY, p.EndX, p.EndY); err != nil {
+		if err := i.policy.ValidateCoordinates(p.StartX, p.StartY); err != nil {
+			i.emitAuditEvent("display.action.denied", name, err.Error())
 			return nil, err
 		}
+		if err := i.policy.ValidateCoordinates(p.EndX, p.EndY); err != nil {
+			i.emitAuditEvent("display.action.denied", name, err.Error())
+			return nil, err
+		}
+		if err := transport.PointerDrag(ctx, p.StartX, p.StartY, p.EndX, p.EndY); err != nil {
+			i.emitAuditEvent("display.action.failed", name, err.Error())
+			return nil, err
+		}
+		i.emitAuditEvent("display.action.invoked", name, fmt.Sprintf("(%d, %d) -> (%d, %d)", p.StartX, p.StartY, p.EndX, p.EndY))
 		return json.Marshal(map[string]any{"status": "ok"})
 
 	case ActionPointerScroll:
@@ -319,21 +409,38 @@ func (i *instance) dispatchAction(ctx context.Context, transport Transport, name
 		if err := json.Unmarshal(input, &p); err != nil {
 			return nil, errors.New("pointer.scroll requires x, y, deltaX, deltaY")
 		}
-		if err := transport.PointerScroll(ctx, p.X, p.Y, p.DeltaX, p.DeltaY); err != nil {
+		if err := i.policy.ValidateCoordinates(p.X, p.Y); err != nil {
+			i.emitAuditEvent("display.action.denied", name, err.Error())
 			return nil, err
 		}
+		if err := transport.PointerScroll(ctx, p.X, p.Y, p.DeltaX, p.DeltaY); err != nil {
+			i.emitAuditEvent("display.action.failed", name, err.Error())
+			return nil, err
+		}
+		i.emitAuditEvent("display.action.invoked", name, fmt.Sprintf("(%d, %d) delta (%d, %d)", p.X, p.Y, p.DeltaX, p.DeltaY))
 		return json.Marshal(map[string]any{"status": "ok"})
 
 	case ActionKeyboardType:
 		var p struct {
-			Text string `json:"text"`
+			Text      string `json:"text"`
+			Sensitive bool   `json:"sensitive"`
 		}
 		if err := json.Unmarshal(input, &p); err != nil {
 			return nil, errors.New("keyboard.type requires text string")
 		}
-		if err := transport.KeyboardType(ctx, p.Text); err != nil {
+		if err := i.policy.ValidateText(p.Text); err != nil {
+			i.emitAuditEvent("display.action.denied", name, err.Error())
 			return nil, err
 		}
+		if err := transport.KeyboardType(ctx, p.Text); err != nil {
+			i.emitAuditEvent("display.action.failed", name, err.Error())
+			return nil, err
+		}
+		loggedText := p.Text
+		if p.Sensitive || i.policy.RedactSensitiveInput {
+			loggedText = "***REDACTED***"
+		}
+		i.emitAuditEvent("display.action.invoked", name, loggedText)
 		return json.Marshal(map[string]any{"status": "ok"})
 
 	case ActionKeyboardPress:
@@ -343,14 +450,33 @@ func (i *instance) dispatchAction(ctx context.Context, transport Transport, name
 		if err := json.Unmarshal(input, &p); err != nil {
 			return nil, errors.New("keyboard.press requires key string")
 		}
-		if err := transport.KeyboardPress(ctx, p.Key); err != nil {
+		if err := i.policy.ValidateKey(p.Key); err != nil {
+			i.emitAuditEvent("display.action.denied", name, err.Error())
 			return nil, err
 		}
+		if err := transport.KeyboardPress(ctx, p.Key); err != nil {
+			i.emitAuditEvent("display.action.failed", name, err.Error())
+			return nil, err
+		}
+		i.emitAuditEvent("display.action.invoked", name, p.Key)
 		return json.Marshal(map[string]any{"status": "ok"})
 
 	default:
 		return nil, fmt.Errorf("unknown display action %q", name)
 	}
+}
+
+func (i *instance) emitAuditEvent(eventType, actionName, details string) {
+	msg := actionName
+	if details != "" {
+		msg += ": " + details
+	}
+	i.emit(orchestrator.EngineEvent{
+		Type:       eventType,
+		Status:     orchestrator.EngineHealthHealthy,
+		Message:    msg,
+		OccurredAt: time.Now().UTC(),
+	})
 }
 
 func (i *instance) Disconnect(ctx context.Context) error {

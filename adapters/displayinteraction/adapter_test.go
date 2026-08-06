@@ -119,3 +119,95 @@ func TestDisplayInteractionConnectAndActions(t *testing.T) {
 		t.Fatalf("disconnect failed: %v", err)
 	}
 }
+
+func TestDisplayInteractionPolicyHooks(t *testing.T) {
+	adapter := displayinteraction.Adapter{
+		Policy: displayinteraction.Policy{
+			AllowedBounds: &displayinteraction.DisplayBounds{
+				MinX: 0,
+				MinY: 0,
+				MaxX: 1920,
+				MaxY: 1080,
+			},
+			MaxTextLength:        15,
+			BlockedKeys:          []string{"Control+Alt+Delete", "Super"},
+			RedactSensitiveInput: true,
+		},
+	}
+
+	target := orchestrator.EngineTarget{
+		APIVersion: "interaction.target/v1alpha1",
+		TargetID:   "test-policy-display",
+		Kind:       "display",
+		Endpoints: []orchestrator.TargetEndpoint{
+			{
+				Name:     "vnc-policy",
+				Protocol: "vnc",
+				URL:      "vnc://127.0.0.1:5900",
+			},
+		},
+	}
+
+	ctx := context.Background()
+	inst, err := adapter.Connect(ctx, manifest.EngineSpec{}, target)
+	if err != nil {
+		t.Fatalf("failed to connect display-interaction: %v", err)
+	}
+
+	caller := inst.(interface {
+		Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error)
+	})
+
+	// 1. Test out-of-bounds pointer click
+	_, err = caller.Call(ctx, "act", json.RawMessage(`{"name":"pointer.click","input":{"x":2500,"y":500}}`))
+	if err == nil || !strings.Contains(err.Error(), "exceed allowed bounds") {
+		t.Fatalf("expected out-of-bounds policy error, got: %v", err)
+	}
+
+	// 2. Test max text length policy error
+	_, err = caller.Call(ctx, "act", json.RawMessage(`{"name":"keyboard.type","input":{"text":"this text is too long for policy"}}`))
+	if err == nil || !strings.Contains(err.Error(), "exceeds max allowed length") {
+		t.Fatalf("expected max text length policy error, got: %v", err)
+	}
+
+	// 3. Test blocked key policy error
+	_, err = caller.Call(ctx, "act", json.RawMessage(`{"name":"keyboard.press","input":{"key":"Control+Alt+Delete"}}`))
+	if err == nil || !strings.Contains(err.Error(), "blocked by display policy") {
+		t.Fatalf("expected blocked key policy error, got: %v", err)
+	}
+
+	// 4. Test sensitive text typing (should succeed)
+	_, err = caller.Call(ctx, "act", json.RawMessage(`{"name":"keyboard.type","input":{"text":"secretpass","sensitive":true}}`))
+	if err != nil {
+		t.Fatalf("expected sensitive keyboard typing to succeed, got: %v", err)
+	}
+
+	// Verify events channel received audit events
+	eventSource := inst.(orchestrator.EngineEventSource)
+	eventsChan := eventSource.EngineEvents()
+
+	hasDeniedEvent := false
+	hasInvokedEvent := false
+
+	for len(eventsChan) > 0 {
+		ev := <-eventsChan
+		if ev.Type == "display.action.denied" {
+			hasDeniedEvent = true
+		}
+		if ev.Type == "display.action.invoked" {
+			hasInvokedEvent = true
+			if strings.Contains(ev.Message, "secretpass") {
+				t.Errorf("sensitive text was NOT redacted in audit event: %s", ev.Message)
+			}
+		}
+	}
+
+	if !hasDeniedEvent {
+		t.Errorf("expected at least one display.action.denied audit event")
+	}
+	if !hasInvokedEvent {
+		t.Errorf("expected at least one display.action.invoked audit event")
+	}
+
+	_ = inst.Disconnect(ctx)
+}
