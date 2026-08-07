@@ -30,7 +30,65 @@ jangolova serve-engine-provider --bind 127.0.0.1:7391
 - `GET /v1/instances/{instanceId}`
 - `POST /v1/instances/{instanceId}/call`
 - `GET /v1/instances/{instanceId}/events`
+- `POST /v1/reconcile`
 - `DELETE /v1/instances/{instanceId}`
+
+### Declarative reconcile (`POST /v1/reconcile`)
+
+The reconcile endpoint accepts a **desired-state list** of interaction instances.
+Jangolova creates missing instances, retains existing matching ones, and —
+when `prune: true` — disconnects and removes instances not in the desired set.
+This lets callers (such as Xallet or an orchestration operator) reconcile the
+current engine state against their own manifest without per-instance calls.
+
+```json
+{
+  "apiVersion": "interaction.engine/v1alpha1",
+  "prune": false,
+  "desired": [
+    {
+      "apiVersion": "interaction.engine/v1alpha1",
+      "instanceId": "browser-one",
+      "engine": { "adapter": "playwright" },
+      "target": { "kind": "browser" }
+    },
+    {
+      "apiVersion": "interaction.engine/v1alpha1",
+      "instanceId": "browser-two",
+      "engine": { "adapter": "playwright" },
+      "target": { "kind": "browser" }
+    }
+  ]
+}
+```
+
+Each entry in `desired` follows the same shape as a `POST /v1/instances` request.
+Duplicated instance IDs are reported as failures rather than double-connected.
+
+Response:
+
+```json
+{
+  "apiVersion": "interaction.engine/v1alpha1",
+  "reconciled": 2,
+  "created": ["browser-two"],
+  "retained": ["browser-one"],
+  "failed": {}
+}
+```
+
+- **`reconciled`** — count of instances in the engine after the operation.
+- **`created`** — instance IDs that were newly connected.
+- **`retained`** — instance IDs that already existed and were kept.
+- **`pruned`** — instance IDs that were disconnected and removed (only present
+  when `prune: true`).
+- **`failed`** — map of instance ID to error message for entries that could not
+  be connected, including validation errors, unknown adapters, adapter-selection
+  failures, or target-resolution errors.
+
+When `prune` is `true`, Jangolova cancels any in-progress recovery for pruned
+instances, waits for recovery to settle, disconnects the interaction engine,
+and releases credential material — all before returning the response.
 
 Connect explicitly to Chromium that the caller already owns:
 

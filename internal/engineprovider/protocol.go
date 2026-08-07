@@ -101,3 +101,18 @@ type ErrorResponse struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
+
+type ReconcileRequest struct {
+	APIVersion string           `json:"apiVersion,omitempty"`
+	Prune      bool             `json:"prune,omitempty"`
+	Desired    []ConnectRequest `json:"desired"`
+}
+
+type ReconcileResponse struct {
+	APIVersion string            `json:"apiVersion"`
+	Reconciled int               `json:"reconciled"`
+	Created    []string          `json:"created,omitempty"`
+	Retained   []string          `json:"retained,omitempty"`
+	Pruned     []string          `json:"pruned,omitempty"`
+	Failed     map[string]string `json:"failed,omitempty"`
+}

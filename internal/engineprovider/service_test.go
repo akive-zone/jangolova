@@ -683,3 +683,168 @@ func hasEventType(events []InstanceEvent, eventType string) bool {
 	}
 	return false
 }
+
+func TestServiceReconcileCreatesMissingAndRetainsExisting(t *testing.T) {
+	t.Parallel()
+	registry := orchestrator.NewRegistry()
+	if err := registry.RegisterEngine("playwright", &fakeEngineAdapter{}); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(registry, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := service.Routes()
+
+	response := performRequest(handler, http.MethodPost, "/v1/instances", `{
+		"apiVersion":"interaction.engine/v1alpha1","instanceId":"browser-one",
+		"engine":{"adapter":"playwright"},"target":{"kind":"browser"}
+	}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("connect status = %d: %s", response.Code, response.Body.String())
+	}
+
+	body := `{
+		"apiVersion":"interaction.engine/v1alpha1","prune":false,"desired":[
+			{"apiVersion":"interaction.engine/v1alpha1","instanceId":"browser-one","engine":{"adapter":"playwright"},"target":{"kind":"browser"}},
+			{"apiVersion":"interaction.engine/v1alpha1","instanceId":"browser-two","engine":{"adapter":"playwright"},"target":{"kind":"browser"}}
+		]
+	}`
+	response = performRequest(handler, http.MethodPost, "/v1/reconcile", body)
+	if response.Code != http.StatusOK {
+		t.Fatalf("reconcile status = %d: %s", response.Code, response.Body.String())
+	}
+	var result ReconcileResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Reconciled != 2 {
+		t.Fatalf("reconciled = %d, want 2", result.Reconciled)
+	}
+	if !containsString(result.Retained, "browser-one") {
+		t.Fatalf("retained = %#v, want browser-one", result.Retained)
+	}
+	if !containsString(result.Created, "browser-two") {
+		t.Fatalf("created = %#v, want browser-two", result.Created)
+	}
+	if len(result.Failed) != 0 {
+		t.Fatalf("failed = %#v, want none", result.Failed)
+	}
+
+	response = performRequest(handler, http.MethodGet, "/v1/instances/browser-two", "")
+	var instance Instance
+	if err := json.NewDecoder(response.Body).Decode(&instance); err != nil {
+		t.Fatal(err)
+	}
+	if instance.InstanceID != "browser-two" || instance.Status != "connected" {
+		t.Fatalf("instance = %#v", instance)
+	}
+}
+
+func TestServiceReconcilePrunesStaleInstances(t *testing.T) {
+	t.Parallel()
+	registry := orchestrator.NewRegistry()
+	if err := registry.RegisterEngine("playwright", &fakeEngineAdapter{}); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(registry, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := service.Routes()
+
+	for _, id := range []string{"keep-one", "drop-one"} {
+		response := performRequest(handler, http.MethodPost, "/v1/instances", `{
+			"apiVersion":"interaction.engine/v1alpha1","instanceId":"`+id+`",
+			"engine":{"adapter":"playwright"},"target":{"kind":"browser"}
+		}`)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("connect %s status = %d: %s", id, response.Code, response.Body.String())
+		}
+	}
+
+	body := `{
+		"apiVersion":"interaction.engine/v1alpha1","prune":true,"desired":[
+			{"apiVersion":"interaction.engine/v1alpha1","instanceId":"keep-one","engine":{"adapter":"playwright"},"target":{"kind":"browser"}}
+		]
+	}`
+	response := performRequest(handler, http.MethodPost, "/v1/reconcile", body)
+	if response.Code != http.StatusOK {
+		t.Fatalf("reconcile status = %d: %s", response.Code, response.Body.String())
+	}
+	var result ReconcileResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Reconciled != 1 {
+		t.Fatalf("reconciled = %d, want 1", result.Reconciled)
+	}
+	if !containsString(result.Retained, "keep-one") {
+		t.Fatalf("retained = %#v, want keep-one", result.Retained)
+	}
+	if !containsString(result.Pruned, "drop-one") {
+		t.Fatalf("pruned = %#v, want drop-one", result.Pruned)
+	}
+
+	response = performRequest(handler, http.MethodGet, "/v1/instances/drop-one", "")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("pruned instance status = %d, want 404", response.Code)
+	}
+	response = performRequest(handler, http.MethodGet, "/v1/instances/keep-one", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("kept instance status = %d, want 200", response.Code)
+	}
+}
+
+func TestServiceReconcileCollectsPerInstanceFailures(t *testing.T) {
+	t.Parallel()
+	registry := orchestrator.NewRegistry()
+	if err := registry.RegisterEngine("playwright", &fakeEngineAdapter{}); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(registry, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{
+		"apiVersion":"interaction.engine/v1alpha1","prune":false,"desired":[
+			{"apiVersion":"interaction.engine/v1alpha1","instanceId":"valid-one","engine":{"adapter":"playwright"},"target":{"kind":"browser"}},
+			{"apiVersion":"interaction.engine/v1alpha1","instanceId":"missing-kind","engine":{"adapter":"playwright"}},
+			{"apiVersion":"interaction.engine/v1alpha1","instanceId":"unknown-adapter","engine":{"adapter":"nope"},"target":{"kind":"browser"}},
+			{"apiVersion":"interaction.engine/v1alpha1","instanceId":"unknown-adapter","engine":{"adapter":"nope"},"target":{"kind":"browser"}}
+		]
+	}`
+	response := performRequest(service.Routes(), http.MethodPost, "/v1/reconcile", body)
+	if response.Code != http.StatusOK {
+		t.Fatalf("reconcile status = %d: %s", response.Code, response.Body.String())
+	}
+	var result ReconcileResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(result.Created, "valid-one") {
+		t.Fatalf("created = %#v, want valid-one", result.Created)
+	}
+	if _, ok := result.Failed["missing-kind"]; !ok {
+		t.Fatalf("failed = %#v, want missing-kind recorded", result.Failed)
+	}
+	if _, ok := result.Failed["unknown-adapter"]; !ok {
+		t.Fatalf("failed = %#v, want unknown-adapter recorded", result.Failed)
+	}
+	if result.Reconciled != 1 {
+		t.Fatalf("reconciled = %d, want 1", result.Reconciled)
+	}
+}
+
+func TestServiceReconcileRejectsMalformedRequest(t *testing.T) {
+	t.Parallel()
+	service, err := NewService(orchestrator.NewRegistry(), "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := performRequest(service.Routes(), http.MethodPost, "/v1/reconcile", `{"apiVersion":`)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", response.Code, response.Body.String())
+	}
+}

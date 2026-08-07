@@ -44,6 +44,7 @@ type Service struct {
 }
 
 type runningInstance struct {
+	request        ConnectRequest
 	adapter        string
 	status         string
 	health         Health
@@ -97,6 +98,7 @@ func (s *Service) Routes() http.Handler {
 	mux.HandleFunc("/v1/engines", s.handleEngines)
 	mux.HandleFunc("/v1/instances", s.handleInstances)
 	mux.HandleFunc("/v1/instances/", s.handleInstance)
+	mux.HandleFunc("/v1/reconcile", s.handleReconcile)
 	return s.authorize(mux)
 }
 
@@ -186,112 +188,30 @@ func (s *Service) handleInstances(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.Lock()
-	if _, exists := s.instances[request.InstanceID]; exists {
-		s.mu.Unlock()
-		writeError(w, http.StatusConflict, "instance_exists", "interaction instance already exists")
-		return
-	}
-	record := &runningInstance{
-		adapter: adapterName,
-		status:  "connecting",
-		health: Health{
-			Status:     orchestrator.EngineHealthStarting,
-			ObservedAt: time.Now().UTC(),
-		},
-	}
-	appendInstanceEvent(record, orchestrator.EngineEvent{
-		Type:       "instance.connecting",
-		Status:     "connecting",
-		OccurredAt: time.Now().UTC(),
-	})
-	s.instances[request.InstanceID] = record
-	s.mu.Unlock()
-
-	endpoints := make([]orchestrator.TargetEndpoint, 0, len(request.Target.Endpoints))
-	for _, endpoint := range request.Target.Endpoints {
-		endpoints = append(endpoints, orchestrator.TargetEndpoint{
-			Name: endpoint.Name, Protocol: endpoint.Protocol, URL: endpoint.URL,
-			CredentialRef: endpoint.CredentialRef, TLSRef: endpoint.TLSRef,
-			Audience: endpoint.Audience, Metadata: cloneValues(endpoint.Metadata),
-		})
-	}
-	target := orchestrator.EngineTarget{
-		APIVersion: request.Target.APIVersion,
-		TargetID:   request.Target.TargetID,
-		Kind:       request.Target.Kind,
-		Endpoints:  endpoints,
-		Handles:    orchestrator.EngineHandles(cloneValues(request.Target.Handles)),
-		Metadata:   cloneValues(request.Target.Metadata),
-	}
-	preparedTarget, release, err := targetconn.Prepare(r.Context(), s.resolver, target)
+	record, err := s.connectAndRecord(r.Context(), request.InstanceID, adapterName, request, adapter)
 	if err != nil {
-		s.mu.Lock()
-		delete(s.instances, request.InstanceID)
-		s.mu.Unlock()
-		writeError(w, http.StatusBadGateway, "target_resolution_failed", err.Error())
+		var failure *connectFailure
+		if !errors.As(err, &failure) {
+			writeError(w, http.StatusBadGateway, "engine_connect_failed", err.Error())
+			return
+		}
+		switch failure.code {
+		case "instance_exists":
+			writeError(w, http.StatusConflict, "instance_exists", failure.message)
+		case "target_resolution_failed":
+			writeError(w, http.StatusBadGateway, "target_resolution_failed", failure.message)
+		default:
+			writeError(w, http.StatusBadGateway, "engine_connect_failed", failure.message)
+		}
 		return
 	}
 	s.mu.Lock()
-	record.release = release
-	record.redact = func(message string) string { return targetconn.RedactString(message, preparedTarget) }
-	record.redactJSON = func(value json.RawMessage) json.RawMessage { return targetconn.RedactJSON(value, preparedTarget) }
-	s.mu.Unlock()
-	spec := manifest.EngineSpec{
-		Adapter:              adapterName,
-		RequiredCapabilities: append([]string(nil), request.Engine.RequiredCapabilities...),
-		Source:               request.Engine.Source,
-		Options:              request.Engine.Options,
-	}
-	instance, err := adapter.Connect(r.Context(), spec, preparedTarget)
-	if err != nil {
-		err = targetconn.Redact(err, preparedTarget)
-		_ = release(context.Background())
-		s.mu.Lock()
-		delete(s.instances, request.InstanceID)
-		s.mu.Unlock()
-		writeError(w, http.StatusBadGateway, "engine_connect_failed", err.Error())
-		return
-	}
-	if instance == nil {
-		_ = release(context.Background())
-		s.mu.Lock()
-		delete(s.instances, request.InstanceID)
-		s.mu.Unlock()
-		writeError(
-			w,
-			http.StatusBadGateway,
-			"engine_connect_failed",
-			"interaction engine returned no instance",
-		)
-		return
-	}
-	s.mu.Lock()
-	record.instance = instance
-	record.engine = adapter
-	record.spec = spec
-	record.target = preparedTarget
-	record.status = "connected"
-	record.health = Health{
-		Status:     orchestrator.EngineHealthHealthy,
-		ObservedAt: time.Now().UTC(),
-	}
-	appendInstanceEvent(record, orchestrator.EngineEvent{
-		Type:       "instance.connected",
-		Status:     "connected",
-		OccurredAt: time.Now().UTC(),
-	})
 	value := describeInstance(request.InstanceID, record)
-	if launchProvider, ok := instance.(orchestrator.EngineCallerLaunchProvider); ok {
+	if launchProvider, ok := record.instance.(orchestrator.EngineCallerLaunchProvider); ok {
 		launch := launchProvider.EngineCallerLaunch()
 		value.CallerLaunch = &CallerLaunch{Environment: cloneValues(launch.Environment)}
 	}
 	s.mu.Unlock()
-	if source, ok := instance.(orchestrator.EngineEventSource); ok {
-		if events := source.EngineEvents(); events != nil {
-			go s.watchInstanceEvents(request.InstanceID, record, instance, events)
-		}
-	}
 	writeJSON(w, http.StatusCreated, value)
 }
 
@@ -961,4 +881,245 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, ErrorResponse{Code: code, Message: message})
+}
+
+// connectFailure classifies why connectAndRecord could not establish an
+// interaction instance so callers can map it to distinct HTTP responses.
+type connectFailure struct {
+	code    string
+	message string
+}
+
+func (f *connectFailure) Error() string { return f.message }
+
+// removeInstance deletes the instance record under id if present.
+func (s *Service) removeInstance(id string) {
+	s.mu.Lock()
+	delete(s.instances, id)
+	s.mu.Unlock()
+}
+
+// connectAndRecord attaches adapter to the caller-owned target described by
+// request and records the resulting interaction instance under id. On success
+// it returns the connected record with a nil error. On failure it removes any
+// placeholder record and returns a *connectFailure carrying the redacted
+// detail message. Reaching the connected state also starts the asynchronous
+// event watcher so lifecycle and recovery events remain available.
+func (s *Service) connectAndRecord(
+	ctx context.Context,
+	id, adapterName string,
+	request ConnectRequest,
+	adapter orchestrator.EngineAdapter,
+) (*runningInstance, error) {
+	s.mu.Lock()
+	if _, exists := s.instances[id]; exists {
+		s.mu.Unlock()
+		return nil, &connectFailure{code: "instance_exists", message: "interaction instance already exists"}
+	}
+	record := &runningInstance{
+		request: request,
+		adapter: adapterName,
+		status:  "connecting",
+		health:  Health{Status: orchestrator.EngineHealthStarting, ObservedAt: time.Now().UTC()},
+	}
+	appendInstanceEvent(record, orchestrator.EngineEvent{
+		Type:       "instance.connecting",
+		Status:     "connecting",
+		OccurredAt: time.Now().UTC(),
+	})
+	s.instances[id] = record
+	s.mu.Unlock()
+
+	endpoints := make([]orchestrator.TargetEndpoint, 0, len(request.Target.Endpoints))
+	for _, endpoint := range request.Target.Endpoints {
+		endpoints = append(endpoints, orchestrator.TargetEndpoint{
+			Name: endpoint.Name, Protocol: endpoint.Protocol, URL: endpoint.URL,
+			CredentialRef: endpoint.CredentialRef, TLSRef: endpoint.TLSRef,
+			Audience: endpoint.Audience, Metadata: cloneValues(endpoint.Metadata),
+		})
+	}
+	target := orchestrator.EngineTarget{
+		APIVersion: request.Target.APIVersion,
+		TargetID:   request.Target.TargetID,
+		Kind:       request.Target.Kind,
+		Endpoints:  endpoints,
+		Handles:    orchestrator.EngineHandles(cloneValues(request.Target.Handles)),
+		Metadata:   cloneValues(request.Target.Metadata),
+	}
+	preparedTarget, release, err := targetconn.Prepare(ctx, s.resolver, target)
+	if err != nil {
+		s.removeInstance(id)
+		return nil, &connectFailure{code: "target_resolution_failed", message: err.Error()}
+	}
+	s.mu.Lock()
+	record.release = release
+	record.redact = func(message string) string { return targetconn.RedactString(message, preparedTarget) }
+	record.redactJSON = func(value json.RawMessage) json.RawMessage { return targetconn.RedactJSON(value, preparedTarget) }
+	s.mu.Unlock()
+
+	spec := manifest.EngineSpec{
+		Adapter:              adapterName,
+		RequiredCapabilities: append([]string(nil), request.Engine.RequiredCapabilities...),
+		Source:               request.Engine.Source,
+		Options:              request.Engine.Options,
+	}
+	instance, err := adapter.Connect(ctx, spec, preparedTarget)
+	if err != nil {
+		err = targetconn.Redact(err, preparedTarget)
+		_ = release(context.Background())
+		s.removeInstance(id)
+		return nil, &connectFailure{code: "engine_connect_failed", message: err.Error()}
+	}
+	if instance == nil {
+		_ = release(context.Background())
+		s.removeInstance(id)
+		return nil, &connectFailure{code: "engine_connect_failed", message: "interaction engine returned no instance"}
+	}
+
+	s.mu.Lock()
+	record.instance = instance
+	record.engine = adapter
+	record.spec = spec
+	record.target = preparedTarget
+	record.status = "connected"
+	record.health = Health{Status: orchestrator.EngineHealthHealthy, ObservedAt: time.Now().UTC()}
+	appendInstanceEvent(record, orchestrator.EngineEvent{
+		Type:       "instance.connected",
+		Status:     "connected",
+		OccurredAt: time.Now().UTC(),
+	})
+	s.mu.Unlock()
+
+	if source, ok := instance.(orchestrator.EngineEventSource); ok {
+		if events := source.EngineEvents(); events != nil {
+			go s.watchInstanceEvents(id, record, instance, events)
+		}
+	}
+	return record, nil
+}
+
+func (s *Service) handleReconcile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+	var req ReconcileRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024*1024))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid reconcile request")
+		return
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "reconcile request must contain one JSON value")
+		return
+	}
+
+	// desiredMap keeps the first occurrence of each instance ID; duplicates are
+	// reported as failures so no instance is connected twice.
+	desiredMap := make(map[string]ConnectRequest, len(req.Desired))
+	failed := map[string]string{}
+	for _, cr := range req.Desired {
+		if _, seen := desiredMap[cr.InstanceID]; seen {
+			if _, alreadyFailed := failed[cr.InstanceID]; !alreadyFailed {
+				failed[cr.InstanceID] = "duplicate desired instance"
+			}
+			continue
+		}
+		desiredMap[cr.InstanceID] = cr
+	}
+
+	created := []string{}
+	retained := []string{}
+	for id, cr := range desiredMap {
+		s.mu.Lock()
+		_, exists := s.instances[id]
+		s.mu.Unlock()
+		if exists {
+			retained = append(retained, id)
+			continue
+		}
+		if err := validateConnectRequest(cr); err != nil {
+			failed[id] = err.Error()
+			continue
+		}
+		adapterName := strings.TrimSpace(cr.Engine.Adapter)
+		if adapterName == "auto" {
+			selected, selectErr := SelectAutomaticEngine(r.Context(), s.registry, cr.Target, cr.Engine.RequiredCapabilities)
+			if selectErr != nil {
+				failed[id] = selectErr.Error()
+				continue
+			}
+			adapterName = selected
+		}
+		adapter, ok := s.registry.Engine(adapterName)
+		if !ok {
+			failed[id] = "interaction engine is not registered"
+			continue
+		}
+		if _, err := s.connectAndRecord(r.Context(), id, adapterName, cr, adapter); err != nil {
+			var failure *connectFailure
+			if errors.As(err, &failure) {
+				failed[id] = failure.message
+			} else {
+				failed[id] = err.Error()
+			}
+			continue
+		}
+		created = append(created, id)
+	}
+
+	pruned := []string{}
+	if req.Prune {
+		type managedInstance struct {
+			instance     orchestrator.EngineInstance
+			release      func(context.Context) error
+			recoveryDone chan struct{}
+		}
+		var values []managedInstance
+		s.mu.Lock()
+		for id, record := range s.instances {
+			if _, keep := desiredMap[id]; keep {
+				continue
+			}
+			delete(s.instances, id)
+			pruned = append(pruned, id)
+			if record.recoveryCancel != nil {
+				record.recoveryCancel()
+				record.recoveryCancel = nil
+			}
+			values = append(values, managedInstance{instance: record.instance, release: record.release, recoveryDone: record.recoveryDone})
+		}
+		s.mu.Unlock()
+		disconnectCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		for _, value := range values {
+			if value.recoveryDone != nil {
+				select {
+				case <-value.recoveryDone:
+				case <-disconnectCtx.Done():
+				}
+			}
+			if value.instance != nil {
+				_ = value.instance.Disconnect(disconnectCtx)
+			}
+			if value.release != nil {
+				_ = value.release(disconnectCtx)
+			}
+		}
+	}
+
+	s.mu.Lock()
+	reconciled := len(s.instances)
+	s.mu.Unlock()
+	resp := ReconcileResponse{
+		APIVersion: APIVersion,
+		Reconciled: reconciled,
+		Created:    created,
+		Retained:   retained,
+		Pruned:     pruned,
+		Failed:     failed,
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
