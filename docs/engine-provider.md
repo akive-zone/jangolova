@@ -266,7 +266,11 @@ Content-Type: application/json
 
 Supported browser actions currently include navigation, click, fill, press,
 JavaScript evaluation, and screenshots. Capability metadata reports effect and
-input schema; authorization remains the caller's responsibility.
+input schema. Before dispatching an `act` call, Jangolova invokes each
+adapter's **per-capability policy gate** via the `Authorize` method on the
+connected instance. If the action is rejected the response is a **403
+`policy_denied`** with the adapter's reason. This gate applies only to the
+`act` method; other methods pass through without authorization.
 
 Deleting an instance disconnects Jangolova. It must not terminate the browser
 or native target. Lifecycle events are bounded to 256 entries and addressed by
