@@ -953,3 +953,45 @@ func TestServiceReconcileRebuildsAfterRestart(t *testing.T) {
 		t.Fatalf("browser-two not recreated status = %d, want 404", response.Code)
 	}
 }
+func TestServiceEnforcesPolicyGateOnActCalls(t *testing.T) {
+	t.Parallel()
+	registry := orchestrator.NewRegistry()
+	adapter := &fakeEngineAdapter{}
+	if err := registry.RegisterEngine("playwright", adapter); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(registry, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := service.Routes()
+
+	// Connect an instance.
+	response := performRequest(handler, http.MethodPost, "/v1/instances", `{
+		"apiVersion":"interaction.engine/v1alpha1",
+		"instanceId":"browser-one",
+		"engine":{"adapter":"playwright"},
+		"target":{"kind":"browser","endpoints":[{"name":"cdp","protocol":"cdp","url":"http://127.0.0.1:9222"}]}
+	}`)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("connect status = %d: %s", response.Code, response.Body.String())
+	}
+
+	// Act call with empty action name should be rejected by the policy gate.
+	response = performRequest(handler, http.MethodPost, "/v1/instances/browser-one/call", `{"method":"act","params":{"name":""}}`)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("empty action status = %d, want 403: %s", response.Code, response.Body.String())
+	}
+
+	// Act call with a valid action name should pass through to Call.
+	response = performRequest(handler, http.MethodPost, "/v1/instances/browser-one/call", `{"method":"act","params":{"name":"describe"}}`)
+	if response.Code != http.StatusOK {
+		t.Fatalf("valid action status = %d, want 200: %s", response.Code, response.Body.String())
+	}
+
+	// Non-act methods (e.g. "hello") should pass through without authorization.
+	response = performRequest(handler, http.MethodPost, "/v1/instances/browser-one/call", `{"method":"hello","params":{}}`)
+	if response.Code != http.StatusOK {
+		t.Fatalf("non-act method status = %d, want 200: %s", response.Code, response.Body.String())
+	}
+}

@@ -432,6 +432,15 @@ func (s *Service) handleInstanceCall(w http.ResponseWriter, r *http.Request, id 
 		writeError(w, http.StatusNotImplemented, "calls_unsupported", "interaction engine does not accept bridge calls")
 		return
 	}
+
+	// Per-capability policy gate: authorize the action before dispatch.
+	if request.Method == "act" {
+		if err := authorizeAction(r.Context(), record.instance, request.Params); err != nil {
+			writeError(w, http.StatusForbidden, "policy_denied", err.Error())
+			return
+		}
+	}
+
 	callCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	result, err := caller.Call(callCtx, request.Method, request.Params)
@@ -891,6 +900,37 @@ type connectFailure struct {
 }
 
 func (f *connectFailure) Error() string { return f.message }
+
+// authorizeAction extracts the action name from act params and delegates to
+// the instance's Authorize per-capability policy gate.
+func authorizeAction(ctx context.Context, instance orchestrator.EngineInstance, params json.RawMessage) error {
+	var action struct {
+		Name     string          `json:"name"`
+		TargetID string          `json:"targetId,omitempty"`
+		Input    json.RawMessage `json:"input,omitempty"`
+	}
+	if err := json.Unmarshal(params, &action); err != nil {
+		return errors.New("cannot decode action for policy authorization")
+	}
+	if strings.TrimSpace(action.Name) == "" {
+		return errors.New("action name is required for authorization")
+	}
+	decision, err := instance.Authorize(ctx, orchestrator.AuthorizeRequest{
+		Action:   action.Name,
+		TargetID: action.TargetID,
+		Input:    action.Input,
+	})
+	if err != nil {
+		return err
+	}
+	if !decision.Authorized {
+		if decision.Reason != "" {
+			return errors.New(decision.Reason)
+		}
+		return fmt.Errorf("action %q is not authorized", action.Name)
+	}
+	return nil
+}
 
 // removeInstance deletes the instance record under id if present.
 func (s *Service) removeInstance(id string) {
