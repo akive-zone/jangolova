@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -106,10 +107,16 @@ func (i *instance) Call(ctx context.Context, method string, params json.RawMessa
 		if err := json.Unmarshal(params, &action); err != nil {
 			return nil, errors.New("Pacman action request is invalid")
 		}
-		i.stateMu.RLock()
-		err := protocol.ValidateActionRequest(action, i.actions)
-		i.stateMu.RUnlock()
-		if err != nil {
+		decision, err := i.Authorize(ctx, orchestrator.AuthorizeRequest{
+			TargetID:     action.TargetID,
+			Action:       action.Name,
+			Input:        action.Input,
+			Capabilities: nil,
+		})
+		if err != nil || !decision.Authorized {
+			if err == nil {
+				err = errors.New(decision.Reason)
+			}
 			return nil, err
 		}
 	}
@@ -147,6 +154,34 @@ func (i *instance) Disconnect(ctx context.Context) error {
 	i.emit(orchestrator.EngineEvent{Type: "pacman.disconnected", Status: "disconnected", OccurredAt: time.Now().UTC()})
 	close(i.events)
 	return err
+}
+
+func (i *instance) Authorize(ctx context.Context, request orchestrator.AuthorizeRequest) (orchestrator.AuthorizeDecision, error) {
+	action := protocol.ActionRequest{
+		Name:     request.Action,
+		TargetID: request.TargetID,
+		Input:    request.Input,
+	}
+	capabilities := request.Capabilities
+	if len(capabilities) == 0 {
+		i.stateMu.RLock()
+		capabilities = append([]string(nil), i.capabilities...)
+		i.stateMu.RUnlock()
+	}
+	if err := protocol.ValidateActionRequest(action, actionSet(capabilities)); err != nil {
+		return orchestrator.AuthorizeDecision{Authorized: false}, err
+	}
+	return orchestrator.AuthorizeDecision{Authorized: true}, nil
+}
+
+func actionSet(capabilities []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(capabilities))
+	for _, capability := range capabilities {
+		if strings.TrimSpace(capability) != "" {
+			set[capability] = struct{}{}
+		}
+	}
+	return set
 }
 
 func (i *instance) EngineCapabilities() []string {

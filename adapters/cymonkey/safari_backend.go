@@ -128,6 +128,17 @@ func (instance *safariInstance) act(ctx context.Context, raw json.RawMessage) (j
 	return instance.caller.Call(ctx, bridge.MethodAct, payload)
 }
 
+func (instance *safariInstance) Authorize(ctx context.Context, request orchestrator.AuthorizeRequest) (orchestrator.AuthorizeDecision, error) {
+	action := strings.TrimSpace(request.Action)
+	if action == "" {
+		return orchestrator.AuthorizeDecision{Authorized: false}, errors.New("Cymonkey Safari action name is required")
+	}
+	if !capabilityAllowed(instance.policy.AllowedCapabilities, action) {
+		return orchestrator.AuthorizeDecision{Authorized: false, Reason: fmt.Sprintf("Cymonkey policy denied capability %q", action)}, nil
+	}
+	return instance.underlying.Authorize(ctx, request)
+}
+
 func (instance *safariInstance) EngineCapabilities() []string {
 	return stableStrings(append([]string{"act", "capabilities", "describe", "events", "target.safari-mcp"}, capabilityNamesFromDescriptors(instance.capabilities)...))
 }

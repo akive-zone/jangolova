@@ -197,6 +197,17 @@ func (i *instance) EngineHealth(ctx context.Context) orchestrator.EngineHealth {
 	return health
 }
 
+func (i *instance) Authorize(ctx context.Context, request orchestrator.AuthorizeRequest) (orchestrator.AuthorizeDecision, error) {
+	action := strings.TrimSpace(request.Action)
+	if action == "" {
+		return orchestrator.AuthorizeDecision{Authorized: false}, errors.New("Cymonkey interaction action name is required")
+	}
+	if !capabilityAllowed(i.policy.AllowedCapabilities, action) {
+		return orchestrator.AuthorizeDecision{Authorized: false, Reason: fmt.Sprintf("Cymonkey policy denied capability %q", action)}, nil
+	}
+	return orchestrator.AuthorizeDecision{Authorized: true}, nil
+}
+
 func (i *instance) EngineCapabilities() []string {
 	i.callMu.Lock()
 	defer i.callMu.Unlock()

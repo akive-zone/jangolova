@@ -231,6 +231,29 @@ func (i *macOSInstance) EngineHealth(context.Context) orchestrator.EngineHealth 
 	return orchestrator.EngineHealth{Status: status, Message: message, ObservedAt: time.Now().UTC()}
 }
 
+func (i *macOSInstance) Authorize(ctx context.Context, request orchestrator.AuthorizeRequest) (orchestrator.AuthorizeDecision, error) {
+	action := strings.TrimSpace(request.Action)
+	if action == "" {
+		return orchestrator.AuthorizeDecision{Authorized: false}, errors.New("Cymonkey macOS action name is required")
+	}
+	if !capabilityAllowed(i.policy.AllowedCapabilities, action) {
+		return orchestrator.AuthorizeDecision{Authorized: false, Reason: fmt.Sprintf("Cymonkey policy denied capability %q", action)}, nil
+	}
+	i.stateMu.RLock()
+	advertised := false
+	for _, name := range i.capabilityNames {
+		if name == action {
+			advertised = true
+			break
+		}
+	}
+	i.stateMu.RUnlock()
+	if !advertised {
+		return orchestrator.AuthorizeDecision{Authorized: false, Reason: fmt.Sprintf("Cymonkey action %q was not advertised by macOS helper", action)}, nil
+	}
+	return orchestrator.AuthorizeDecision{Authorized: true}, nil
+}
+
 func (i *macOSInstance) EngineCapabilities() []string {
 	i.stateMu.RLock()
 	defer i.stateMu.RUnlock()

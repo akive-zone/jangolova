@@ -173,6 +173,19 @@ func (i *instance) EngineHealth(ctx context.Context) orchestrator.EngineHealth {
 	return health
 }
 
+func (i *instance) Authorize(ctx context.Context, request orchestrator.AuthorizeRequest) (orchestrator.AuthorizeDecision, error) {
+	action := strings.TrimSpace(request.Action)
+	if action == "" {
+		return orchestrator.AuthorizeDecision{Authorized: false}, errors.New("WebDriver interaction action name is required")
+	}
+	for _, capability := range capabilityNames() {
+		if capability == action {
+			return orchestrator.AuthorizeDecision{Authorized: true}, nil
+		}
+	}
+	return orchestrator.AuthorizeDecision{Authorized: false}, fmt.Errorf("WebDriver action %q was not advertised", action)
+}
+
 func (i *instance) EngineCapabilities() []string                  { return capabilityNames() }
 func (i *instance) EngineEvents() <-chan orchestrator.EngineEvent { return i.lifecycle }
 

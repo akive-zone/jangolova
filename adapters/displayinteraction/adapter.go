@@ -82,6 +82,34 @@ func (p Policy) ValidateKey(key string) error {
 	return nil
 }
 
+// authorize is the per-capability policy gate for an action invocation. It
+// runs the same coordinate/text/key checks that dispatchAction enforces, so
+// callers can decide whether to permit an action before it is dispatched.
+func (p Policy) authorize(name string, input json.RawMessage) error {
+	switch name {
+	case ActionPointerMove, ActionPointerClick, ActionPointerScroll:
+		var v struct{ X, Y int }
+		_ = json.Unmarshal(input, &v)
+		return p.ValidateCoordinates(v.X, v.Y)
+	case ActionPointerDrag:
+		var v struct{ StartX, StartY, EndX, EndY int }
+		_ = json.Unmarshal(input, &v)
+		if err := p.ValidateCoordinates(v.StartX, v.StartY); err != nil {
+			return err
+		}
+		return p.ValidateCoordinates(v.EndX, v.EndY)
+	case ActionKeyboardType:
+		var v struct{ Text string }
+		_ = json.Unmarshal(input, &v)
+		return p.ValidateText(v.Text)
+	case ActionKeyboardPress:
+		var v struct{ Key string }
+		_ = json.Unmarshal(input, &v)
+		return p.ValidateKey(v.Key)
+	}
+	return nil
+}
+
 type Adapter struct {
 	Connector Connector
 	Policy    Policy
@@ -140,7 +168,7 @@ var (
 	_ orchestrator.EngineInstance           = (*instance)(nil)
 	_ orchestrator.EngineHealthProvider     = (*instance)(nil)
 	_ orchestrator.EngineCapabilityProvider = (*instance)(nil)
-	_ orchestrator.EngineEventSource         = (*instance)(nil)
+	_ orchestrator.EngineEventSource        = (*instance)(nil)
 	_ bridge.Caller                         = (*instance)(nil)
 )
 
@@ -507,6 +535,17 @@ func (i *instance) Disconnect(ctx context.Context) error {
 	})
 	close(i.events)
 	return err
+}
+
+func (i *instance) Authorize(ctx context.Context, request orchestrator.AuthorizeRequest) (orchestrator.AuthorizeDecision, error) {
+	action := strings.TrimSpace(request.Action)
+	if action == "" {
+		return orchestrator.AuthorizeDecision{Authorized: false}, errors.New("display interaction action name is required")
+	}
+	if err := i.policy.authorize(action, request.Input); err != nil {
+		return orchestrator.AuthorizeDecision{Authorized: false}, err
+	}
+	return orchestrator.AuthorizeDecision{Authorized: true}, nil
 }
 
 func (i *instance) EngineCapabilities() []string {

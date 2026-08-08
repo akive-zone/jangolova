@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -13,6 +14,21 @@ import (
 // must never terminate the target runtime.
 type EngineInstance interface {
 	Disconnect(context.Context) error
+	Authorize(context.Context, AuthorizeRequest) (AuthorizeDecision, error)
+}
+
+// AuthorizeRequest carries the policy-relevant fields for an interaction call.
+type AuthorizeRequest struct {
+	TargetID     string          `json:"targetId"`
+	Action       string          `json:"action"`
+	Input        json.RawMessage `json:"input,omitempty"`
+	Capabilities []string        `json:"capabilities,omitempty"`
+}
+
+// AuthorizeDecision is the policy outcome for an Authorize call.
+type AuthorizeDecision struct {
+	Authorized bool   `json:"authorized"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 // CallerLaunch contains ephemeral material that an authorized target owner

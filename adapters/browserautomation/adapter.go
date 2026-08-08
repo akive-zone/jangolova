@@ -224,6 +224,13 @@ func (i *instance) EngineHealth(ctx context.Context) orchestrator.EngineHealth {
 	return health
 }
 
+func (i *instance) Authorize(ctx context.Context, request orchestrator.AuthorizeRequest) (orchestrator.AuthorizeDecision, error) {
+	if strings.TrimSpace(request.Action) == "" {
+		return orchestrator.AuthorizeDecision{Authorized: false}, errors.New("browser interaction action name is required")
+	}
+	return orchestrator.AuthorizeDecision{Authorized: true}, nil
+}
+
 func (i *instance) EngineCapabilities() []string {
 	i.callMu.Lock()
 	defer i.callMu.Unlock()

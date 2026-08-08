@@ -66,6 +66,13 @@ func (f *fakeEngineInstance) Disconnect(context.Context) error {
 	return nil
 }
 
+func (f *fakeEngineInstance) Authorize(_ context.Context, request orchestrator.AuthorizeRequest) (orchestrator.AuthorizeDecision, error) {
+	if strings.TrimSpace(request.Action) == "" {
+		return orchestrator.AuthorizeDecision{Authorized: false}, errors.New("fake action name is required")
+	}
+	return orchestrator.AuthorizeDecision{Authorized: true}, nil
+}
+
 func (f *fakeEngineInstance) isDisconnected() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -108,6 +115,12 @@ func (healthEngineAdapter) Connect(context.Context, manifest.EngineSpec, orchest
 	return healthEngineInstance{}, nil
 }
 func (healthEngineInstance) Disconnect(context.Context) error { return nil }
+func (healthEngineInstance) Authorize(_ context.Context, request orchestrator.AuthorizeRequest) (orchestrator.AuthorizeDecision, error) {
+	if strings.TrimSpace(request.Action) == "" {
+		return orchestrator.AuthorizeDecision{Authorized: false}, errors.New("health fake action name is required")
+	}
+	return orchestrator.AuthorizeDecision{Authorized: true}, nil
+}
 func (healthEngineInstance) EngineHealth(context.Context) orchestrator.EngineHealth {
 	return orchestrator.EngineHealth{Status: orchestrator.EngineHealthUnhealthy, Message: "fixture probe failed", ObservedAt: time.Now().UTC()}
 }
@@ -135,6 +148,12 @@ func (f *recoveringHealthAdapter) attemptCount() int {
 }
 
 func (*recoveringHealthInstance) Disconnect(context.Context) error { return nil }
+func (*recoveringHealthInstance) Authorize(_ context.Context, request orchestrator.AuthorizeRequest) (orchestrator.AuthorizeDecision, error) {
+	if strings.TrimSpace(request.Action) == "" {
+		return orchestrator.AuthorizeDecision{Authorized: false}, errors.New("recovering health fake action name is required")
+	}
+	return orchestrator.AuthorizeDecision{Authorized: true}, nil
+}
 func (f *recoveringHealthInstance) EngineHealth(context.Context) orchestrator.EngineHealth {
 	status := orchestrator.EngineHealthUnhealthy
 	if f.healthy {

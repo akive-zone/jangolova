@@ -229,6 +229,17 @@ func (i *instance) EngineHealth(ctx context.Context) orchestrator.EngineHealth {
 	health.Status = orchestrator.EngineHealthHealthy
 	return health
 }
+func (i *instance) Authorize(ctx context.Context, request orchestrator.AuthorizeRequest) (orchestrator.AuthorizeDecision, error) {
+	action := strings.TrimSpace(request.Action)
+	if action == "" {
+		return orchestrator.AuthorizeDecision{Authorized: false}, errors.New("presentation action name is required")
+	}
+	if !i.policy.actionAuthorized(action) {
+		return orchestrator.AuthorizeDecision{Authorized: false, Reason: fmt.Sprintf("%s is not authorized by presentation policy", action)}, nil
+	}
+	return orchestrator.AuthorizeDecision{Authorized: true}, nil
+}
+
 func (i *instance) EngineCapabilities() []string {
 	i.callMu.Lock()
 	defer i.callMu.Unlock()
