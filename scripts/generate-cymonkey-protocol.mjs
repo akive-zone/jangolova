@@ -173,4 +173,16 @@ func (c Client) Call(ctx context.Context, method string, params json.RawMessage)
 }
 `;
 
-await writeFile(goV1alpha2URL, go);
+await output(goV1alpha2URL, go);
+
+async function output(url, expected) {
+  if (process.argv.includes('--check')) {
+    const actual = await readFile(url, 'utf8').catch(() => '');
+    if (actual !== expected) {
+      console.error(`${url.pathname} is stale; run npm run generate:cymonkey-protocol`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+  await writeFile(url, expected);
+}

@@ -85,7 +85,7 @@ type Event struct {
 }
 
 type EventBatch struct {
-	Cursor string  `json:"cursor"`
+	Cursor string `json:"cursor"`
 	Events []Event `json:"events"`
 }
 

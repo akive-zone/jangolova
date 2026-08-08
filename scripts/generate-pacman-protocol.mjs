@@ -131,4 +131,16 @@ func (c Client) Call(ctx context.Context, method string, params json.RawMessage)
 }
 `;
 
-await writeFile(goURL, go);
+await output(goURL, go);
+
+async function output(url, expected) {
+  if (process.argv.includes('--check')) {
+    const actual = await readFile(url, 'utf8').catch(() => '');
+    if (actual !== expected) {
+      console.error(`${url.pathname} is stale; run npm run generate:pacman-protocol`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+  await writeFile(url, expected);
+}
