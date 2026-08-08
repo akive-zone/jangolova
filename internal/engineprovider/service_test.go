@@ -848,3 +848,89 @@ func TestServiceReconcileRejectsMalformedRequest(t *testing.T) {
 		t.Fatalf("status = %d, want 400: %s", response.Code, response.Body.String())
 	}
 }
+
+func TestServiceReconcileRebuildsAfterRestart(t *testing.T) {
+	t.Parallel()
+	registry := orchestrator.NewRegistry()
+	if err := registry.RegisterEngine("playwright", &fakeEngineAdapter{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterEngine("puppeteer", &fakeEngineAdapter{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate initial provider run: connect instances directly.
+	first, err := NewService(registry, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{
+		`{"apiVersion":"interaction.engine/v1alpha1","instanceId":"browser-one","engine":{"adapter":"playwright"},"target":{"kind":"browser"}}`,
+		`{"apiVersion":"interaction.engine/v1alpha1","instanceId":"browser-two","engine":{"adapter":"playwright"},"target":{"kind":"browser"}}`,
+		`{"apiVersion":"interaction.engine/v1alpha1","instanceId":"firefox-one","engine":{"adapter":"puppeteer"},"target":{"kind":"browser"}}`,
+	} {
+		response := performRequest(first.Routes(), http.MethodPost, "/v1/instances", body)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("initial connect status = %d: %s", response.Code, response.Body.String())
+		}
+	}
+
+	// Simulate provider restart: discard the service, create a fresh one against
+	// the same registry (caller-owned targets and adapters survive the restart).
+	second, err := NewService(registry, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Caller submits its desired-state manifest. The new provider should create
+	// the two desired instances from its clean state (the old instances from
+	// first were lost on restart, which is why reconcile is needed).
+	body := `{
+		"apiVersion":"interaction.engine/v1alpha1","prune":true,"desired":[
+			{"apiVersion":"interaction.engine/v1alpha1","instanceId":"browser-one","engine":{"adapter":"playwright"},"target":{"kind":"browser"}},
+			{"apiVersion":"interaction.engine/v1alpha1","instanceId":"firefox-one","engine":{"adapter":"puppeteer"},"target":{"kind":"browser"}}
+		]
+	}`
+	response := performRequest(second.Routes(), http.MethodPost, "/v1/reconcile", body)
+	if response.Code != http.StatusOK {
+		t.Fatalf("reconcile status = %d: %s", response.Code, response.Body.String())
+	}
+	var result ReconcileResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Reconciled != 2 {
+		t.Fatalf("reconciled = %d, want 2", result.Reconciled)
+	}
+	if !containsString(result.Created, "browser-one") {
+		t.Fatalf("created = %#v, want browser-one", result.Created)
+	}
+	if !containsString(result.Created, "firefox-one") {
+		t.Fatalf("created = %#v, want firefox-one", result.Created)
+	}
+	if len(result.Pruned) != 0 {
+		t.Fatalf("pruned = %#v, want none after restart (no stale instances)", result.Pruned)
+	}
+	if len(result.Failed) != 0 {
+		t.Fatalf("failed = %#v, want none", result.Failed)
+	}
+
+	// Verify the rebuilt instances are functional.
+	for _, id := range []string{"browser-one", "firefox-one"} {
+		response := performRequest(second.Routes(), http.MethodGet, "/v1/instances/"+id, "")
+		if response.Code != http.StatusOK {
+			t.Fatalf("rebuilt %s status = %d: %s", id, response.Code, response.Body.String())
+		}
+		var instance Instance
+		if err := json.NewDecoder(response.Body).Decode(&instance); err != nil {
+			t.Fatal(err)
+		}
+		if instance.Status != "connected" {
+			t.Fatalf("rebuilt %s status = %q", id, instance.Status)
+		}
+	}
+	response = performRequest(second.Routes(), http.MethodGet, "/v1/instances/browser-two", "")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("browser-two not recreated status = %d, want 404", response.Code)
+	}
+}
