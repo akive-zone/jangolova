@@ -52,6 +52,7 @@ type Service struct {
 	resolver       targetconn.Resolver
 	sessionService session.Service
 	sessions       map[string]*runningSession
+	store          *sessionStore
 }
 
 type ServiceOption func(*Service)
@@ -60,6 +61,27 @@ func WithTargetResolver(resolver targetconn.Resolver) ServiceOption {
 	return func(service *Service) {
 		if resolver != nil {
 			service.resolver = resolver
+		}
+	}
+}
+
+// WithStoreDirectory enables persistent session storage in the given
+// directory. Sessions are saved as individual JSON files and reloaded on
+// service start so that session summaries and event history survive restarts.
+func WithStoreDirectory(dir string) ServiceOption {
+	return func(service *Service) {
+		if dir == "" {
+			return
+		}
+		store, err := newSessionStore(dir)
+		if err != nil {
+			// Log but don't fail — the service can still run without persistence.
+			return
+		}
+		service.store = store
+		// Load persisted sessions into the service's session map.
+		for id, rec := range store.sessions {
+			service.sessions[id] = rec
 		}
 	}
 }
@@ -111,6 +133,8 @@ type runningSession struct {
 	pending    map[string]PendingApproval
 	events     []EventEnvelope
 	nextCursor uint64
+
+	persist func()
 }
 
 func (s *Service) Routes() http.Handler {
@@ -260,6 +284,10 @@ func (s *Service) handleSessionRoot(w http.ResponseWriter, r *http.Request, id s
 		}
 		delete(s.sessions, id)
 		s.mu.Unlock()
+		if err := s.deleteStoredSession(id); err != nil {
+			writeError(w, http.StatusBadGateway, "session_delete_failed", err.Error())
+			return
+		}
 		if err := s.closeSession(r.Context(), record); err != nil {
 			writeError(w, http.StatusBadGateway, "session_close_failed", err.Error())
 			return
@@ -497,6 +525,7 @@ func (s *Service) createSession(ctx context.Context, request CreateSessionReques
 		runner: agentRunner, agent: agentSession, attachments: attachments,
 		status: "ready", pending: make(map[string]PendingApproval),
 	}
+	record.persist = func() { _ = s.saveSession(record) }
 	s.mu.Lock()
 	if _, exists := s.sessions[request.Agent.SessionID]; exists {
 		s.mu.Unlock()
@@ -505,6 +534,9 @@ func (s *Service) createSession(ctx context.Context, request CreateSessionReques
 	}
 	s.sessions[request.Agent.SessionID] = record
 	s.mu.Unlock()
+	if err := s.saveSession(record); err != nil {
+		return fmt.Errorf("persist session: %w", err)
+	}
 	return nil
 }
 
@@ -636,9 +668,9 @@ func (r *runningSession) finishRun() {
 
 func (r *runningSession) appendEvent(event *session.Event) (EventEnvelope, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	raw, err := json.Marshal(event)
 	if err != nil {
+		r.mu.Unlock()
 		return EventEnvelope{}, fmt.Errorf("encode Grimlock event: %w", err)
 	}
 	for id, confirmation := range event.Actions.RequestedToolConfirmations {
@@ -649,6 +681,11 @@ func (r *runningSession) appendEvent(event *session.Event) (EventEnvelope, error
 	r.events = append(r.events, envelope)
 	if len(r.events) > grimlockEventLimit {
 		r.events = append([]EventEnvelope(nil), r.events[len(r.events)-grimlockEventLimit:]...)
+	}
+	persist := r.persist
+	r.mu.Unlock()
+	if persist != nil {
+		persist()
 	}
 	return envelope, nil
 }
@@ -744,6 +781,7 @@ func (s *Service) Close(ctx context.Context) error {
 		if err := s.closeSession(ctx, record); err != nil {
 			problems = append(problems, err)
 		}
+		_ = s.deleteStoredSession(record.summary.SessionID)
 	}
 	return errors.Join(problems...)
 }
