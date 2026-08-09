@@ -139,7 +139,7 @@
 - [x] Define provider-neutral capture, coordinate-space, focus, pointer, and
   keyboard target contracts (`display-interaction` engine adapter).
 - [x] Add display observation (`display.describe`, `display.capture`) and pointer/keyboard (`pointer.*`, `keyboard.*`) semantic capabilities.
-- [ ] Add policy metadata for coordinate clicks, typing, and sensitive input.
+- [x] Add policy metadata for coordinate clicks, typing, and sensitive input.
 - [ ] Verify native-host and Xallet-provided display contracts with the same
   adapter conformance suite.
 
@@ -149,14 +149,14 @@
   interactions.
 - [x] Add live CA and client-certificate transport rotation, with atomic HTTP
   transport promotion and process-safe CDP worker replacement.
-- [ ] Extend per-capability policy hooks and audit records beyond the current
+- [x] Extend per-capability policy hooks and audit records beyond the current
   presentation execute/capture path.
 - [x] Reattach failed engine instances to the same caller-owned target with
   bounded backoff and action-safe lifecycle events.
-- [ ] Add caller reconciliation fixtures for rebuilding desired interaction
+- [x] Add caller reconciliation fixtures for rebuilding desired interaction
   instances after the Jangolova provider process restarts.
 - [x] Add generated TypeScript/Go browser-extension protocol bindings and
   recorded legacy/current compatibility fixtures.
-- [ ] Extend generated clients and compatibility fixtures to the remaining
+- [x] Extend generated clients and compatibility fixtures to the remaining
   Jangolova protocols after their contracts stabilize.
 - [ ] Sign and publish versioned interaction-runtime images.
