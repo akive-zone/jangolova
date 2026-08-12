@@ -6,5 +6,6 @@ public class JangolovaPacman : ModuleRules
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
         PublicDependencyModuleNames.AddRange(new[] { "Core", "CoreUObject", "Engine", "Json", "WebSocketServer" });
+        DynamicallyLoadedModuleNames.Add("WebSocketServer");
     }
 }
