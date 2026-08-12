@@ -9,6 +9,8 @@ const automation = await readFile(new URL("Source/UnrealPacmanFixture/Private/Pa
 const build = await readFile(new URL("Source/UnrealPacmanFixture/UnrealPacmanFixture.Build.cs", root), "utf8");
 const container = await readFile(new URL("../deploy/unreal-pacman-fixture/Containerfile", import.meta.url), "utf8");
 const runtime = await readFile(new URL("../deploy/unreal-pacman-fixture/run-fixture.sh", import.meta.url), "utf8");
+const server = await readFile(new URL("../pkg/unreal-pacman/Source/JangolovaPacman/Private/PacmanWebSocketServer.cpp", import.meta.url), "utf8");
+const serverHeader = await readFile(new URL("../pkg/unreal-pacman/Source/JangolovaPacman/Public/PacmanWebSocketServer.h", import.meta.url), "utf8");
 
 assert.equal(project.Modules[0].Name, "UnrealPacmanFixture");
 assert.equal(project.Modules[0].Type, "Runtime");
@@ -30,4 +32,7 @@ assert.match(container, /BuildCookRun/);
 assert.doesNotMatch(container, /jangolova\/engine-runtime/);
 assert.match(runtime, /UNREAL_FIXTURE_EXECUTABLE/);
 assert.match(runtime, /-unattended/);
+assert.match(serverHeader, /FPacmanWebSocketServer/);
+assert.match(server, /WebSocketServerModule/);
+assert.match(server, /StartAllServers/);
 console.log("Unreal Pacman fixture environment contract is valid.");

@@ -10,4 +10,8 @@ class UNREALPACMANFIXTURE_API APacmanFixtureGameMode final : public AGameModeBas
 
 protected:
     virtual void StartPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+private:
+    TUniquePtr<class FPacmanWebSocketServer> PacmanServer;
 };

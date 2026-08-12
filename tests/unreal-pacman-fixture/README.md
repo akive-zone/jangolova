@@ -7,10 +7,9 @@ its own Unreal process, World, renderer, and lifecycle.
 The project discovers the plugin through `AdditionalPluginDirectories` and
 starts `APacmanFixtureGameMode`, which spawns one actor and registers the stable
 resource `object:fixture` with the actions
-`resource.describe` and `object.visibility.set`. Add a transport binding to the
-fixture when running a live test; the Pacman package supplies the authenticated
-connection host and game-thread router, while the fixture owns the listen and
-upgrade socket.
+`resource.describe` and `object.visibility.set`. When
+`JANGOLOVA_PACMAN_TOKEN` is set, the fixture starts the package's UE 5.8
+WebSocketServer listener on port 8090 (or `-PacmanPort=<port>`).
 
 With an installed Unreal Engine 5.3 toolchain, generate project files, compile,
 and run the automation suite using the normal Unreal commands for the host

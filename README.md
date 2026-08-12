@@ -40,11 +40,17 @@ same target endpoints and handles without Xallet.
 - Safari MCP attachment through a caller-owned Streamable HTTP relay.
 - Agent-facing `hello`, `capabilities`, `describe`, `act`, and `events` calls.
 - Blockade pixel observation contract and an external YOLO/SAM worker.
+- Blockade can also manage local vision workers over framed stdin/stdout IPC.
 - Three.js dynamic presentation example.
 - `web-presentation` declarative presentation adapter for caller-owned CDP browsers.
 - Authenticated cooperative bridge and Unity Package Manager integration.
 - Pacman semantic presentation attachment and an explicitly allowlisted Unity
   package; Unity/Unreal rendering and display transport remain external.
+- Godot, Unity, and Unreal Pacman runtime matrix and published artifacts:
+  [engine runtime manifest](protocol/pacman/v1/engine-runtimes.json),
+  [Godot package](pkg/godot-pacman/README.md),
+  [Unity package](pkg/unity-pacman/README.md), and
+  [Unreal package/release](pkg/unreal-pacman/README.md).
 - Target-preserving disconnect, active health, and lifecycle events.
 
 ## Commands
@@ -194,7 +200,13 @@ npm run test:unity-package
 npm run test:unity-pacman-package
 npm run test:unreal-pacman-package
 npm run test:unreal-pacman-fixture
+npm run test:pacman-runtime-manifest
 ```
+
+The published Unreal 5.8 headless fixture is
+[`ghcr.io/webong/jangolova/unreal-pacman-gpu:5.8`](deploy/unreal-pacman-gpu/README.md).
+Run its live protocol check with `JANGOLOVA_PACMAN_TOKEN` and
+`npm run test:unreal-pacman-live` after starting the container.
 
 The optional container fixture is documented in
 [tests/docker/README.md](tests/docker/README.md). Docker is not required by

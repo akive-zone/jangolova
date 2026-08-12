@@ -22,6 +22,7 @@ public:
 
 private:
     static bool ConstantTimeEquals(const FString& Left, const FString& Right);
+    static bool IsAuthMessage(const FString& Message, const FString& Token);
 
     FString BearerToken;
     TWeakObjectPtr<UPacmanRegistryComponent> Registry;
