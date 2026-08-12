@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "IPacmanTransportHost.h"
+#include "UObject/WeakObjectPtr.h"
 
 class FPacmanRequestRouter;
 

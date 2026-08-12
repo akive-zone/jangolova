@@ -66,13 +66,13 @@ bool FPacmanWebSocketHost::AcceptConnection(const TSharedRef<IPacmanWebSocketCon
         CurrentRouter = Router;
     }
     if (Previous.IsValid()) Previous->Close();
-    Connection->SetTextHandler([CurrentRouter](const FString& Message)
+    Connection->SetTextHandler([CurrentRouter, Connection](const FString& Message)
     {
         if (!CurrentRouter.IsValid()) return;
         CurrentRouter->HandleText(Message, [Connection](const FString& Reply)
         {
             Connection->SendText(Reply);
-        });
+        }, CurrentRouter);
     });
     return true;
 }

@@ -39,6 +39,7 @@ same target endpoints and handles without Xallet.
 - Named WebKit WebDriver attachment for WebKitGTK, WPE WebKit, and Safari.
 - Safari MCP attachment through a caller-owned Streamable HTTP relay.
 - Agent-facing `hello`, `capabilities`, `describe`, `act`, and `events` calls.
+- Blockade pixel observation contract and an external YOLO/SAM worker.
 - Three.js dynamic presentation example.
 - `web-presentation` declarative presentation adapter for caller-owned CDP browsers.
 - Authenticated cooperative bridge and Unity Package Manager integration.
@@ -126,6 +127,21 @@ export JANGOLOVA_GRIMLOCK_TOKEN="replace-with-a-random-secret"
 jangolova serve-grimlock-acp
 ```
 
+The shorter `gl` alias is available for local development:
+
+```bash
+jangolova gl             # authenticated HTTP agent API
+jangolova gl --mcp       # MCP over stdio (add --bind for HTTP)
+jangolova gl --acp       # ACP over stdio
+```
+
+Set `JANGOLOVA_GRIMLOCK_SESSION_STORE` (or pass `--session-store`) to retain
+session summaries and event history across process restarts:
+
+```bash
+jangolova gl --session-store ./var/grimlock-sessions
+```
+
 Connection references, expiry, private certificate authorities, and output
 redaction are documented in
 [target connection security](docs/target-connection-security.md).
@@ -153,6 +169,7 @@ targets solely to verify attachment portability.
 
 See [Architecture](docs/architecture.md), [Interaction provider](docs/engine-provider.md),
 [Deployment modes](docs/deployment-modes.md), [Bridge protocol](docs/bridge-protocol.md),
+[the headless engine test server runbook](docs/headless-engine-server.md),
 [Grimlock agent subsystem](docs/grimlock.md),
 [Cymonkey runtime-agnostic augmentation](docs/cymonkey-runtime.md),
 [Cymonkey web profile](docs/cymonkey.md),

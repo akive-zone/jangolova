@@ -33,3 +33,23 @@ func TestProtocolSchemaIsValidAndEngineNeutral(t *testing.T) {
 		}
 	}
 }
+
+func TestScenePlanSchemaAndFixtureAreValidJSON(t *testing.T) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test path")
+	}
+	root := filepath.Join(filepath.Dir(file), "..", "..")
+	for _, relative := range []string{
+		filepath.Join("protocol", "pacman", "v1", "scene-plan.schema.json"),
+		filepath.Join("tests", "godot-pacman-fixture", "house.scene-plan.json"),
+	} {
+		contents, err := os.ReadFile(filepath.Join(root, relative))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !json.Valid(contents) {
+			t.Fatalf("%s is invalid JSON", relative)
+		}
+	}
+}

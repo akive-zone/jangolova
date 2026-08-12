@@ -192,13 +192,19 @@ func (r *Runtime) CreateAgent(ctx context.Context, spec AgentSpec, tools []tool.
 // Protocol adapters call this application boundary rather than implementing
 // capability discovery or policy themselves.
 func (r *Runtime) CreateInteractionAgent(ctx context.Context, spec AgentSpec, bindings []InteractionBinding) (*AgentSession, error) {
+	return r.CreateInteractionAgentWithTools(ctx, spec, bindings, nil)
+}
+
+// CreateInteractionAgentWithTools adds caller-owned read-only tools, such as
+// Blockade observation, to the same model session as interaction tools.
+func (r *Runtime) CreateInteractionAgentWithTools(ctx context.Context, spec AgentSpec, bindings []InteractionBinding, extra []tool.Tool) (*AgentSession, error) {
 	if err := spec.Validate(); err != nil {
 		return nil, err
 	}
 	if len(bindings) == 0 {
 		return nil, errors.New("Grimlock requires at least one interaction binding")
 	}
-	var agentTools []tool.Tool
+	agentTools := append([]tool.Tool(nil), extra...)
 	usedInteractions := make(map[string]struct{}, len(bindings))
 	usedTools := make(map[string]struct{})
 	for _, binding := range bindings {

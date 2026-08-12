@@ -54,6 +54,37 @@ Descriptions contain only registered resources. Event types and sources are
 also registered; events are bounded, cursor-addressed observations, not a dump
 of engine logs.
 
+## Model-authored scene plans
+
+Models do not send engine code or arbitrary scene-tree mutations. Jangolova can
+accept a bounded scene plan described by
+[`protocol/pacman/v1/scene-plan.schema.json`](../protocol/pacman/v1/scene-plan.schema.json).
+A plan declares the stable resources it needs and an ordered list of Pacman
+actions. Before execution Jangolova negotiates `hello`, reads `capabilities` and
+`describe`, verifies every required resource and target kind, then executes only
+the advertised actions in order.
+
+For example, a model can describe a house choreography as:
+
+```json
+{
+  "apiVersion": "jangolova.pacman.scene/v1alpha1",
+  "name": "midnight-house",
+  "requires": [{"id": "object:door", "kind": "object"}],
+  "actions": [{
+    "name": "object.visible.set",
+    "targetId": "object:door",
+    "input": {"visible": false}
+  }]
+}
+```
+
+The plan layer is intentionally declarative and engine-neutral. Engines still
+own rendering, physics, input, and game logic; Pacman remains the explicit
+semantic boundary. The Godot house fixture contains a complete example at
+`tests/godot-pacman-fixture/house.scene-plan.json`, and its rendered test proves
+that the same model plan changes both the scene frame and Pacman event stream.
+
 ## Transport bindings
 
 Pacman methods, resource IDs, errors, events, and health are independent of

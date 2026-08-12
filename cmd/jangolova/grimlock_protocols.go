@@ -19,13 +19,14 @@ func serveGrimlockMCPCommand(args []string) error {
 	flags := flag.NewFlagSet("serve-grimlock-mcp", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	bind := flags.String("bind", "", "optional MCP Streamable HTTP bind address; empty uses stdio")
+	storeDir := flags.String("session-store", envOrDefault("JANGOLOVA_GRIMLOCK_SESSION_STORE", ""), "directory for persistent Grimlock session metadata and events")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return errors.New("serve-grimlock-mcp accepts flags only")
 	}
-	service, err := newGrimlockService()
+	service, err := newGrimlockService(grimlockStoreOption(*storeDir))
 	if err != nil {
 		return err
 	}
@@ -43,13 +44,14 @@ func serveGrimlockMCPCommand(args []string) error {
 func serveGrimlockACPCommand(args []string) error {
 	flags := flag.NewFlagSet("serve-grimlock-acp", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
+	storeDir := flags.String("session-store", envOrDefault("JANGOLOVA_GRIMLOCK_SESSION_STORE", ""), "directory for persistent Grimlock session metadata and events")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return errors.New("serve-grimlock-acp accepts flags only")
 	}
-	service, err := newGrimlockService()
+	service, err := newGrimlockService(grimlockStoreOption(*storeDir))
 	if err != nil {
 		return err
 	}

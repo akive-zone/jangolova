@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UObject/WeakObjectPtr.h"
 
 class UPacmanRegistryComponent;
 
@@ -8,14 +9,13 @@ class UPacmanRegistryComponent;
 // marshalled to the Unreal game thread; the caller may receive the reply on
 // any thread used by its WebSocket implementation.
 class JANGOLOVAPACMAN_API FPacmanRequestRouter final
-    : public TSharedFromThis<FPacmanRequestRouter>
 {
 public:
     using FReply = TFunction<void(const FString&)>;
 
     explicit FPacmanRequestRouter(TWeakObjectPtr<UPacmanRegistryComponent> InRegistry);
 
-    bool HandleText(const FString& Message, FReply Reply);
+    bool HandleText(const FString& Message, FReply Reply, TSharedPtr<FPacmanRequestRouter> Self);
     void Stop();
 
 private:

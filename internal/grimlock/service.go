@@ -19,9 +19,11 @@ import (
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/toolconfirmation"
 	"google.golang.org/genai"
 
+	"jangolova/internal/blockade"
 	"jangolova/internal/bridge"
 	"jangolova/internal/engineprovider"
 	"jangolova/internal/manifest"
@@ -53,6 +55,7 @@ type Service struct {
 	sessionService session.Service
 	sessions       map[string]*runningSession
 	store          *sessionStore
+	blockadeClient *blockade.Client
 }
 
 type ServiceOption func(*Service)
@@ -63,6 +66,12 @@ func WithTargetResolver(resolver targetconn.Resolver) ServiceOption {
 			service.resolver = resolver
 		}
 	}
+}
+
+// WithBlockadeClient enables the read-only Blockade observation tool for new
+// Grimlock sessions. The worker remains external to Jangolova.
+func WithBlockadeClient(client blockade.Client) ServiceOption {
+	return func(service *Service) { service.blockadeClient = &client }
 }
 
 // WithStoreDirectory enables persistent session storage in the given
@@ -323,6 +332,14 @@ func (s *Service) handleRun(w http.ResponseWriter, r *http.Request, id string) {
 		writeError(w, http.StatusNotFound, "session_not_found", "Grimlock session was not found")
 		return
 	}
+	// Persisted sessions restore metadata and event history, but active model
+	// and interaction attachments are intentionally not serialized. Refuse a
+	// run until the caller creates a fresh attached session rather than
+	// dereferencing a nil runner after a restart.
+	if record.runner == nil {
+		writeError(w, http.StatusConflict, "session_reconnect_required", "Grimlock session requires model and target reconnection after restart")
+		return
+	}
 	content := &genai.Content{Role: genai.RoleUser, Parts: []*genai.Part{{Text: request.Text}}}
 	s.runHTTP(w, r, record, content, request.Stream)
 }
@@ -505,7 +522,16 @@ func (s *Service) createSession(ctx context.Context, request CreateSessionReques
 			Policy:              policy, RequireApproval: requireApproval,
 		})
 	}
-	agentSession, err := s.runtime.CreateInteractionAgent(ctx, request.Agent, bindings)
+	var extraTools []tool.Tool
+	if s.blockadeClient != nil {
+		var err error
+		extraTools, err = BlockadeTools(*s.blockadeClient)
+		if err != nil {
+			_ = cleanupAttachments(ctx, attachments)
+			return fmt.Errorf("configure Blockade: %w", err)
+		}
+	}
+	agentSession, err := s.runtime.CreateInteractionAgentWithTools(ctx, request.Agent, bindings, extraTools)
 	if err != nil {
 		_ = cleanupAttachments(ctx, attachments)
 		return err
@@ -599,6 +625,9 @@ func (s *Service) runStream(w http.ResponseWriter, r *http.Request, record *runn
 }
 
 func (s *Service) execute(ctx context.Context, record *runningSession, content *genai.Content, streaming bool, onEvent func(EventEnvelope) bool) ([]EventEnvelope, error) {
+	if record == nil || record.runner == nil {
+		return nil, errors.New("Grimlock session requires model and target reconnection after restart")
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	if err := record.beginRun(cancel); err != nil {
 		cancel()
@@ -781,7 +810,6 @@ func (s *Service) Close(ctx context.Context) error {
 		if err := s.closeSession(ctx, record); err != nil {
 			problems = append(problems, err)
 		}
-		_ = s.deleteStoredSession(record.summary.SessionID)
 	}
 	return errors.Join(problems...)
 }

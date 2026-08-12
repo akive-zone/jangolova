@@ -196,6 +196,21 @@ func TestMCPHTTPNegotiatesTransportSession(t *testing.T) {
 	}
 }
 
+func TestMCPHTTPRequiresGrimlockAuthorization(t *testing.T) {
+	service := testService(t)
+	mcp, err := NewMCPServer(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	mcp.Routes().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized MCP status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestACPStdioNegotiatesAndRequiresSessionConfiguration(t *testing.T) {
 	service := testService(t)
 	acp, err := NewACPServer(service)

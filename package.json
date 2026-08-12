@@ -28,6 +28,8 @@
     "test:unity-pacman-package": "node tests/unity-pacman-package-contract-test.mjs",
     "test:unity-pacman-fixture": "node tests/unity-pacman-fixture-contract-test.mjs",
     "test:godot-pacman-fixture": "node tests/godot-pacman-fixture-contract-test.mjs",
+    "test:godot-pacman-house": "node tests/godot-pacman-house-live-test.mjs",
+    "test:pacman-gpu-fixtures": "node tests/pacman-gpu-fixture-contract-test.mjs",
     "test:unreal-pacman-package": "node tests/unreal-pacman-package-contract-test.mjs",
     "test:unreal-pacman-fixture": "node tests/unreal-pacman-fixture-contract-test.mjs",
     "generate:cymonkey-protocol": "node scripts/generate-cymonkey-protocol.mjs",

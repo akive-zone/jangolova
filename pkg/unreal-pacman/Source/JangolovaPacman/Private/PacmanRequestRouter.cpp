@@ -46,7 +46,7 @@ FPacmanRequestRouter::FPacmanRequestRouter(TWeakObjectPtr<UPacmanRegistryCompone
 {
 }
 
-bool FPacmanRequestRouter::HandleText(const FString& Message, FReply Reply)
+bool FPacmanRequestRouter::HandleText(const FString& Message, FReply Reply, TSharedPtr<FPacmanRequestRouter> Self)
 {
     if (!Reply || Stopped.Load()) return false;
     FTCHARToUTF8 Utf8(*Message);
@@ -80,7 +80,7 @@ bool FPacmanRequestRouter::HandleText(const FString& Message, FReply Reply)
 
     const TSharedPtr<FJsonValue> RequestId = *Id;
     TWeakObjectPtr<UPacmanRegistryComponent> WeakRegistry = Registry;
-    TWeakPtr<FPacmanRequestRouter> WeakRouter = AsShared();
+    TWeakPtr<FPacmanRequestRouter> WeakRouter = Self;
     AsyncTask(ENamedThreads::GameThread, [WeakRouter, WeakRegistry, RequestId, Method, Params, Reply = MoveTemp(Reply)]() mutable
     {
         const TSharedPtr<FPacmanRequestRouter> Router = WeakRouter.Pin();

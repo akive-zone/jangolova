@@ -25,6 +25,12 @@
       "minLength": 1,
       "maxLength": 256
     },
+    "roles": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 1,
+      "items": {"enum": ["reasoning", "vision", "multimodal"]}
+    },
     "credentialRef": {
       "type": "string",
       "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"

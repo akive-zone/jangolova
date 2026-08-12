@@ -29,6 +29,8 @@ func main() {
 		err = serveGrimlockMCPCommand(os.Args[2:])
 	case "serve-grimlock-acp":
 		err = serveGrimlockACPCommand(os.Args[2:])
+	case "gl":
+		err = grimlockCommand(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 		return
@@ -54,5 +56,6 @@ Commands:
   serve-engine-provider   Serve the authenticated interaction-engine API
   serve-grimlock           Serve the authenticated Grimlock agent API
   serve-grimlock-mcp       Serve Grimlock through MCP (stdio or HTTP)
-  serve-grimlock-acp       Serve Grimlock through ACP stdio`)
+  serve-grimlock-acp       Serve Grimlock through ACP stdio
+  gl                       Serve Grimlock (use --mcp or --acp for a protocol adapter)`)
 }

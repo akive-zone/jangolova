@@ -2,4 +2,4 @@
 
 #include "Modules/ModuleManager.h"
 
-IMPLEMENT_MODULE(FUnrealPacmanFixtureModule, UnrealPacmanFixture)
+IMPLEMENT_PRIMARY_GAME_MODULE(FUnrealPacmanFixtureModule, UnrealPacmanFixture, "UnrealPacmanFixture")

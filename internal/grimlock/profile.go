@@ -14,6 +14,14 @@ import (
 
 const ModelAPIVersion = "agent.model/v1alpha1"
 
+type ModelRole string
+
+const (
+	ModelRoleReasoning  ModelRole = "reasoning"
+	ModelRoleVision     ModelRole = "vision"
+	ModelRoleMultimodal ModelRole = "multimodal"
+)
+
 var (
 	profileIDPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._-]{0,127}$`)
 	protocolPattern  = regexp.MustCompile(`^[a-z][a-z0-9.-]{0,63}$`)
@@ -27,6 +35,7 @@ type ModelProfile struct {
 	Protocol      string            `json:"protocol"`
 	Endpoint      string            `json:"endpoint"`
 	Model         string            `json:"model"`
+	Roles         []ModelRole       `json:"roles,omitempty"`
 	CredentialRef string            `json:"credentialRef"`
 	TLSRef        string            `json:"tlsRef,omitempty"`
 	Metadata      map[string]string `json:"metadata,omitempty"`
@@ -44,6 +53,20 @@ func (p ModelProfile) Validate() error {
 	}
 	if strings.TrimSpace(p.Model) == "" || len(p.Model) > 256 || strings.ContainsRune(p.Model, '\x00') {
 		return errors.New("model name is required")
+	}
+	if len(p.Roles) == 0 {
+		// Existing profiles default to the original Grimlock behavior.
+		p.Roles = []ModelRole{ModelRoleReasoning}
+	}
+	seenRoles := make(map[ModelRole]struct{}, len(p.Roles))
+	for _, role := range p.Roles {
+		if role != ModelRoleReasoning && role != ModelRoleVision && role != ModelRoleMultimodal {
+			return fmt.Errorf("model role %q is invalid", role)
+		}
+		if _, exists := seenRoles[role]; exists {
+			return fmt.Errorf("model role %q is duplicated", role)
+		}
+		seenRoles[role] = struct{}{}
 	}
 	if !profileIDPattern.MatchString(p.CredentialRef) {
 		return errors.New("model credentialRef is required and must be an opaque reference")
@@ -90,5 +113,6 @@ func cloneModelProfile(profile ModelProfile) ModelProfile {
 	for name, value := range profile.Metadata {
 		result.Metadata[name] = value
 	}
+	result.Roles = append([]ModelRole(nil), profile.Roles...)
 	return result
 }

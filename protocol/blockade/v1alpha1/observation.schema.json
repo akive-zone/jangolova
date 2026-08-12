@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jangolova.dev/protocol/blockade/v1alpha1/observation.schema.json",
+  "title": "Blockade pixel observation contract",
+  "type": "object",
+  "required": ["apiVersion", "observations"],
+  "properties": {
+    "apiVersion": {"const": "blockade.observation/v1alpha1"},
+    "requestId": {"type": "string"},
+    "observations": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/observation"}
+    }
+  },
+  "$defs": {
+    "region": {
+      "type": "object",
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": {"type": "number"}, "y": {"type": "number"},
+        "width": {"type": "number", "minimum": 0},
+        "height": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "observation": {
+      "type": "object",
+      "required": ["kind", "label", "confidence", "region"],
+      "properties": {
+        "kind": {"type": "string"},
+        "label": {"type": "string"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "region": {"$ref": "#/$defs/region"},
+        "mask": {"type": "string", "description": "Base64-encoded PNG mask."},
+        "evidence": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

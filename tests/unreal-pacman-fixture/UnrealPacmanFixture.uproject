@@ -1,6 +1,6 @@
 {
   "FileVersion": 3,
-  "EngineAssociation": "5.3",
+  "EngineAssociation": "5.8",
   "Category": "Jangolova",
   "Description": "Caller-owned Unreal fixture for Jangolova Pacman conformance.",
   "Modules": [

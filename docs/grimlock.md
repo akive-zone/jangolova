@@ -206,11 +206,21 @@ The service keeps a bounded in-memory event history for the process lifetime.
 MCP and ACP adapters are layered over this same service and must not create a
 second agent runtime.
 
+Set `JANGOLOVA_GRIMLOCK_SESSION_STORE` or pass `--session-store DIR` to any
+Grimlock server to persist session summaries and retained events. Explicitly
+deleting a session removes its record. Normal process shutdown preserves the
+record for restart inspection. Model connections and interaction attachments
+are deliberately not serialized; a reloaded session reports
+`session_reconnect_required` until the caller creates a new attached session.
+
 ## MCP adapter
 
 `jangolova serve-grimlock-mcp` exposes the same service as MCP tools and
 resources. The default transport is line-delimited JSON-RPC over stdio; use
 `--bind host:port` for authenticated single-request Streamable HTTP at `/mcp`.
+
+For local use, `jangolova gl --mcp` is an equivalent short form. The existing
+long command remains the stable script-friendly form.
 
 The MCP tool surface is intentionally small and session-oriented:
 
@@ -241,6 +251,9 @@ attachments, the caller supplies them through the `agent`, `model`, and
 model gateway, credential references, and target descriptors remain opaque and
 caller-owned. A session is not created if those fields do not pass the same
 validation used by HTTP.
+
+`jangolova gl --acp` is the equivalent short form for the ACP adapter, while
+`jangolova gl` starts the authenticated HTTP agent API.
 
 ## Delivery sequence
 

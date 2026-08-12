@@ -12,4 +12,6 @@ ENV GODOT_PROJECT_PATH=/workspace/tests/godot-pacman-fixture
 ENV JANGOLOVA_PACMAN_TOKEN=
 ENV JANGOLOVA_PACMAN_PORT=8090
 
-ENTRYPOINT ["godot", "--headless", "--path", "/workspace/tests/godot-pacman-fixture", "--editor", "--quit-after", "2"]
+EXPOSE 8090
+
+ENTRYPOINT ["godot", "--headless", "--path", "/workspace/tests/godot-pacman-fixture"]
