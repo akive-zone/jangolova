@@ -42,23 +42,23 @@ bool FPacmanWebSocketServer::Start(uint16 Port, TWeakObjectPtr<UPacmanRegistryCo
     Server->OnConnected([this](TSharedRef<IWebSocketClientConnection> Connection)
     {
         const TSharedPtr<FPacmanUnrealWebSocketConnection> Wrapped = MakeShared<FPacmanUnrealWebSocketConnection>(Connection);
-        Connections.Add(Connection.Get(), Wrapped);
+        Connections.Add(&Connection.Get(), Wrapped);
         if (!Host->AcceptConnection(Wrapped.ToSharedRef()))
         {
-            Connections.Remove(Connection.Get());
+            Connections.Remove(&Connection.Get());
             return;
         }
     });
     Server->OnMessage([this](TSharedRef<IWebSocketClientConnection> Connection, const FString& Message)
     {
-        if (const TSharedPtr<FPacmanUnrealWebSocketConnection>* Wrapped = Connections.Find(Connection.Get()))
+        if (const TSharedPtr<FPacmanUnrealWebSocketConnection>* Wrapped = Connections.Find(&Connection.Get()))
         {
             (*Wrapped)->Deliver(Message);
         }
     });
     Server->OnDisconnected([this](TSharedRef<IWebSocketClientConnection> Connection)
     {
-        Connections.Remove(Connection.Get());
+        Connections.Remove(&Connection.Get());
     });
     FWebSocketServerModule::Get().StartAllServers();
     Listening = Server->IsListening();
